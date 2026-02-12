@@ -1,0 +1,28 @@
+# Build artifacts
+build/
+cmake-build-debug/
+*.o
+*.exe
+*.a
+*.so
+*.dylib
+
+# Lake build artifacts
+.lake/
+lake-packages/
+
+# IDE
+.idea/
+.vscode/
+.claude/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Temp
+*.log
+*.tmp
+*.bak

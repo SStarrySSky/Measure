@@ -1,0 +1,27 @@
+{
+  "name": "measure",
+  "version": "0.1.0",
+  "leanVersion": "4.29.0-measure.1",
+  "description": "Measure: Physics-aware proof assistant based on Lean4",
+  "upstream": {
+    "repository": "https://github.com/leanprover/lean4",
+    "branch": "master",
+    "version": "4.29.0-pre"
+  },
+  "extensions": {
+    "MEASURE_EXTENSIONS": "ON",
+    "kernel": {
+      "approx_eq": true,
+      "theory_modules": true,
+      "rigor_levels": true,
+      "epsilon_tracking": true,
+      "conservation_checker": true,
+      "theory_graph": true
+    }
+  },
+  "build": {
+    "cmake_args": ["-DCMAKE_BUILD_TYPE=Release", "-DMEASURE_EXTENSIONS=ON"],
+    "stage1_bin": "lean4/build/release/stage1/bin",
+    "lean_toolchain_format": "local_path_to_stage1"
+  }
+}
