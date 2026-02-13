@@ -10,7 +10,7 @@
     <a href="#-verification-stats"><img src="https://img.shields.io/badge/axioms-23-yellow?style=flat-square" alt="Axioms"></a>
     <a href="#-physics-coverage"><img src="https://img.shields.io/badge/physics_domains-25-blueviolet?style=flat-square" alt="Domains"></a>
     <a href="#-verification-stats"><img src="https://img.shields.io/badge/build-2881_jobs_passing-brightgreen?style=flat-square" alt="Build"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache_2.0-blue?style=flat-square" alt="License"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
   </p>
 </p>
 
