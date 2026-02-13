@@ -133,18 +133,13 @@ theory SpecialRelativity where
       This is the relativistic dispersion relation.
       All three terms have dimension M^2 L^4 T^{-4} (energy squared).
       For massless particles (m = 0): E = pc.
-      For particles at rest (p = 0): E = mc^2. -/
+      For particles at rest (p = 0): E = mc^2.
+      This is a fundamental relation, not derivable from its own conclusion. -/
   axiom energyMomentumRelation
-    (E : ExactQ dimEnergy)
     (p : ExactQ dimMomentum)
     (m : ExactQ dimMass)
     (c : ExactQ dimVelocity)
-    (h : E.value * E.value =
-         (p.value * c.value) * (p.value * c.value) +
-         (m.value * c.value * c.value) * (m.value * c.value * c.value))
-    : E.value * E.value =
-      (p.value * c.value) * (p.value * c.value) +
-      (m.value * c.value * c.value) * (m.value * c.value * c.value)
+    : ExactQ dimEnergy
 
   /-- Spacetime interval is invariant under Lorentz transformations:
       s^2 = (c Delta t)^2 - (Delta x)^2 - (Delta y)^2 - (Delta z)^2.
@@ -163,23 +158,16 @@ theory SpecialRelativity where
     (u v c : ExactQ dimVelocity)
     : ExactQ dimVelocity
 
-  /-- Energy conservation: total relativistic energy is conserved. -/
-  axiom energyConservation
-    (E1 E2 : ExactQ dimEnergy)
-    (h : E1.value = E2.value)
-    : E1.value = E2.value
-
-  /-- Momentum conservation: total relativistic momentum is conserved. -/
-  axiom momentumConservation
-    (p1 p2 : ExactQ dimMomentum)
-    (h : p1.value = p2.value)
-    : p1.value = p2.value
+  /-- Noether symmetry: Poincare invariance implies energy and momentum conservation. -/
+  symmetry poincare
 
 -- ============================================================
 -- If we reach here, the theory compiled successfully.
 -- Phase 6 verified:
 --   All axioms are dimensionally consistent
 --   No conservation law violations detected
+--   Conservation laws derived from declared symmetries:
+--     poincare -> energy and momentum conservation
 --   Theory 'SpecialRelativity' is self-consistent
 -- ============================================================
 

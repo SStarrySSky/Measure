@@ -149,6 +149,46 @@ instance {d : Dim} {model : Type} [UncertaintyModel model] :
       error := UncertaintyModel.scale s eq
       provenance := .applyOp "scale" q.provenance }
 
+-- ============================================================
+-- Comparison operators
+-- ============================================================
+
+/-- Less-than for exact quantities (same dimension). -/
+instance {d : Dim} : LT (ExactQ d) where
+  lt a b := a.value < b.value
+
+/-- Less-or-equal for exact quantities (same dimension). -/
+instance {d : Dim} : LE (ExactQ d) where
+  le a b := a.value ≤ b.value
+
+/-- Decidable LT for ExactQ (enables `if a < b then ...`). -/
+instance {d : Dim} (a b : ExactQ d) : Decidable (a < b) :=
+  Float.decLt a.value b.value
+
+/-- Decidable LE for ExactQ (enables `if a ≤ b then ...`). -/
+instance {d : Dim} (a b : ExactQ d) : Decidable (a ≤ b) :=
+  Float.decLe a.value b.value
+
+/-- Less-than for uncertain quantities (compares central values). -/
+instance {d : Dim} {model : Type} [UncertaintyModel model] :
+    LT (Quantity d (.uncertain model)) where
+  lt a b := a.value < b.value
+
+/-- Less-or-equal for uncertain quantities (compares central values). -/
+instance {d : Dim} {model : Type} [UncertaintyModel model] :
+    LE (Quantity d (.uncertain model)) where
+  le a b := a.value ≤ b.value
+
+/-- Decidable LT for uncertain quantities (enables `if a < b then ...`). -/
+instance {d : Dim} {model : Type} [UncertaintyModel model]
+    (a b : Quantity d (.uncertain model)) : Decidable (a < b) :=
+  Float.decLt a.value b.value
+
+/-- Decidable LE for uncertain quantities (enables `if a ≤ b then ...`). -/
+instance {d : Dim} {model : Type} [UncertaintyModel model]
+    (a b : Quantity d (.uncertain model)) : Decidable (a ≤ b) :=
+  Float.decLe a.value b.value
+
 /-- Approximate equality within tolerance ε.
     `approxEq a b ε` holds when `|a.value - b.value| < ε`. -/
 def approxEq {d : Dim} {c₁ c₂ : Certainty}

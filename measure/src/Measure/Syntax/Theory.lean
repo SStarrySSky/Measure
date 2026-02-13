@@ -14,6 +14,7 @@ Provides:
 import Lean
 import Measure.Syntax.Attributes
 import Measure.Syntax.MetadataExt
+import Measure.Syntax.SymmetryExt
 import Measure.Dim.Basic
 import Measure.Kernel.Elab
 
@@ -121,6 +122,93 @@ def checkTheoryCompat (env : Environment) (info : TheoryInfo)
     match checkPairwiseCompat parentInfos with
     | some err => err
     | none => .ok
+
+-- ============================================================
+-- Syntax: declare_symmetry (for use inside theory blocks)
+-- ============================================================
+
+/-- Syntax for declaring a continuous symmetry inside a theory block.
+    Usage: `symmetry group (approximate n)? (anomalous "name")? (conserves "qty")?`
+    Examples:
+      symmetry time_translation
+      symmetry space_translation
+      symmetry rotation
+      symmetry gauge_U1
+      symmetry lorentz
+      symmetry time_translation approximate 1e-10
+      symmetry gauge_U1 anomalous "chiral"
+      symmetry rotation conserves "spin"
+-/
+syntax (name := symmetryCmd)
+  "symmetry " ident (" approximate " num)?
+    (" anomalous " str)? (" conserves " str)? : command
+
+@[command_elab symmetryCmd]
+def elabSymmetryCmd : CommandElab := fun stx => do
+  let groupId := stx[1].getId.toString
+  -- Parse exactness: default is "exact"
+  let approxOpt := stx[2]
+  let anomOpt   := stx[3]
+  let consOpt   := stx[4]
+  let exactness : String :=
+    if !approxOpt.isNone then
+      let scaleStr := approxOpt[0][1].isNatLit?.getD 0
+      s!"approximate:{scaleStr}"
+    else if !anomOpt.isNone then
+      let anomName := anomOpt[0][1].isStrLit?.getD ""
+      s!"anomalous:{anomName}"
+    else
+      "exact"
+  let conserved : String :=
+    if !consOpt.isNone then consOpt[0][1].isStrLit?.getD ""
+    else ""
+  let ns ← getCurrNamespace
+  let declName := ns ++ Name.mkSimple groupId
+  let raw : RawSymmetryDecl := {
+    name      := groupId
+    groupKind := groupId
+    exactness := exactness
+    conserved := conserved
+  }
+  modifyEnv fun env => symmetryExt.addEntry env (declName, raw)
+  logInfo m!"Registered symmetry {groupId} (exactness={exactness}) in {ns}"
+
+-- ============================================================
+-- Noether auto-derivation: RawSymmetryDecl → ConservedQty
+-- ============================================================
+
+/-- Map a raw symmetry group kind string to the implied conserved quantity name. -/
+private def noetherConservedQty (groupKind : String) (conservedOverride : String)
+    : Option (String × ConservedQty) :=
+  if conservedOverride != "" then
+    some (conservedOverride, ConservedQty.fromString conservedOverride)
+  else match groupKind with
+    | "time_translation"  => some ("energy", .energy)
+    | "space_translation" => some ("momentum", .momentum)
+    | "rotation"          => some ("angular_momentum", .angularMomentum)
+    | "rotation2d"        => some ("angular_momentum", .angularMomentum)
+    | "lorentz"           => some ("energy", .energy)
+    | "poincare"          => some ("energy", .energy)
+    | s                   =>
+      if s.startsWith "gauge_" then
+        some ("charge", .charge)
+      else
+        none
+
+/-- Human-readable description of the Noether mapping for error messages. -/
+private def noetherDescription (groupKind : String) : String :=
+  match groupKind with
+  | "time_translation"  => "time-translation symmetry implies energy conservation"
+  | "space_translation" => "space-translation symmetry implies momentum conservation"
+  | "rotation"          => "rotational symmetry implies angular momentum conservation"
+  | "rotation2d"        => "2D rotational symmetry implies angular momentum conservation"
+  | "lorentz"           => "Lorentz symmetry implies energy conservation"
+  | "poincare"          => "Poincare symmetry implies energy conservation"
+  | s                   =>
+    if s.startsWith "gauge_" then
+      s!"gauge symmetry ({s}) implies charge conservation"
+    else
+      s!"custom symmetry ({s})"
 
 -- ============================================================
 -- Syntax: theory Name (extends Parent₁, ...)? where body
@@ -316,7 +404,43 @@ def elabTheoryCmd : CommandElab := fun stx => do
         conservationLaws := conservationLaws.push (declName, qty.toString)
     | none => pure ()
 
-  -- If conservation laws exist, run the C++ checker
+  -- (c) Noether auto-derivation: collect symmetry declarations and derive conservation laws
+  let env ← getEnv
+  let symDecls := collectSymmetries env theoryName
+  let mut noetherDerived : Array (String × ConservedQty) := #[]
+  for (_, rawSym) in symDecls do
+    match noetherConservedQty rawSym.groupKind rawSym.conserved with
+    | some (qtyName, qty) =>
+      -- Check for duplicates: don't add if already declared via @[conservation]
+      let alreadyDeclared := conservationLaws.any fun (_, n) => n == qtyName
+      if !alreadyDeclared then
+        noetherDerived := noetherDerived.push (qtyName, qty)
+        -- Also register as a conservation law for the C++ checker
+        let syntheticName := theoryName ++ Name.mkSimple s!"noether_{rawSym.name}"
+        conservationLaws := conservationLaws.push (syntheticName, qtyName)
+      logInfo m!"[noether] {noetherDescription rawSym.groupKind} (from symmetry '{rawSym.name}')"
+    | none =>
+      logInfo m!"[noether] Symmetry '{rawSym.name}' (group={rawSym.groupKind}): no standard conserved quantity"
+
+  -- Merge Noether-derived conservation laws into TheoryInfo
+  if noetherDerived.size > 0 then
+    let env ← getEnv
+    let newQtys := noetherDerived.toList.map (·.2)
+    match findTheory? env theoryName with
+    | some currentInfo =>
+      -- Deduplicate: only add quantities not already in the list
+      let existingQtys := currentInfo.conservation
+      let uniqueNew := newQtys.filter fun q => !existingQtys.contains q
+      if uniqueNew.length > 0 then
+        let updatedInfo : TheoryInfo := { currentInfo with
+          conservation := existingQtys ++ uniqueNew
+        }
+        modifyEnv fun env => theoryExt.addEntry env updatedInfo
+        let names := uniqueNew.map ConservedQty.toString
+        logInfo m!"[noether] Auto-derived conservation laws for '{theoryName}': {names}"
+    | none => pure ()
+
+  -- Run the C++ checker on ALL conservation laws (declared + Noether-derived)
   if conservationLaws.size > 0 then
     let env ← getEnv
     match getRegistry env with
@@ -331,13 +455,19 @@ def elabTheoryCmd : CommandElab := fun stx => do
       conservationCount := conservationLaws.size
       for verdict in verdicts do
         if verdict.startsWith "FAIL" then
-          throwError m!"Theory '{theoryName}' conservation violation: {verdict}"
+          -- Check if this is a Noether-derived law for a better error message
+          let isNoether := symDecls.any fun (_, rawSym) =>
+            (verdict.splitOn rawSym.name).length > 1
+          if isNoether then
+            throwError m!"Theory '{theoryName}' Noether conservation violation: {verdict}\n  A declared symmetry implies conservation that is violated."
+          else
+            throwError m!"Theory '{theoryName}' conservation violation: {verdict}"
         else
           logInfo m!"[conservation] {verdict}"
     | none =>
       -- FFI unavailable, skip conservation checking
       conservationCount := conservationLaws.size
 
-  logInfo m!"Theory '{theoryName}' self-consistency verified: {axiomCount} axioms checked, {conservationCount} conservation laws"
+  logInfo m!"Theory '{theoryName}' self-consistency verified: {axiomCount} axioms checked, {conservationCount} conservation laws ({noetherDerived.size} Noether-derived)"
 
 end Measure.Syntax

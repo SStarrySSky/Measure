@@ -4,12 +4,11 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 Compute command implementation: `compute via engine: expr`.
 Orchestrates expression serialization, engine dispatch, and result deserialization.
-Uses Lifecycle.lean state machine, Adapter.lean registry, Json.lean serialization.
+Uses Engine.lean process management, Adapter.lean registry, Json.lean serialization.
 See ARCHITECTURE.md Section 8.1.
 -/
 import Lean.Data.Json
 import Measure.External.Engine
-import Measure.External.Lifecycle
 import Measure.External.Adapter
 import Measure.External.Verify
 import Measure.External.Json

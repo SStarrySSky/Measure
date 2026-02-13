@@ -19,7 +19,7 @@ open Measure.Theory
 /-- Source of a conservation law. -/
 inductive ConservationSource where
   | declared
-  | noether (symmetry : SymmetryDecl)
+  | noether (sym : SymmetryDecl)
   | inherited (fromTheory : String)
   deriving Inhabited, Repr
 

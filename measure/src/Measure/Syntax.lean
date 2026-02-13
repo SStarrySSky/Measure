@@ -6,5 +6,6 @@ Barrel file for Measure.Syntax module.
 -/
 import Measure.Syntax.Attributes
 import Measure.Syntax.MetadataExt
+import Measure.Syntax.SymmetryExt
 import Measure.Syntax.Theory
 import Measure.Syntax.Tactics

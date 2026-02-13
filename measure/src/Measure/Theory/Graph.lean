@@ -15,19 +15,4 @@ These types are retained for potential future Lean-side tooling.
 
 namespace Measure.Theory
 
-/-- Compatibility check result. -/
-inductive CompatResult where
-  | compatible
-  | bridgeable (bridge : ApproxBridge)
-  | incompatible (witness : ConflictWitness)
-  deriving Inhabited, Repr
-
-/-- Structural rule violation. -/
-structure RuleViolation where
-  ruleNumber : Nat
-  description : String
-  involvedA : String
-  involvedB : String
-  deriving Inhabited, Repr
-
 end Measure.Theory

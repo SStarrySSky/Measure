@@ -5,6 +5,9 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Example: A physicist defines a small Newtonian gravity theory.
 Compilation = automatic self-consistency proof.
 
+For the mathematical (ℝ-based) formulation with validity conditions,
+see Measure.Physics.Historical.ApproximateTheories
+
 The `theory` block triggers 6 phases:
   Phase 1: Parent compatibility check
   Phase 2: C++ TheoryRegistry registration
@@ -64,25 +67,21 @@ theory NewtonianGravity where
   axiom linearMomentum (m : ExactQ dimMass) (v : ExactQ dimVelocity)
     : ExactQ dimMomentum
 
-  /-- Energy conservation: in a closed system, total energy is constant.
-      KE + PE at time t₁ equals KE + PE at time t₂. -/
-  axiom energyConservation
-    (ke₁ pe₁ ke₂ pe₂ : ExactQ dimEnergy)
-    (h : ke₁.value + pe₁.value = ke₂.value + pe₂.value)
-    : ke₁.value + pe₁.value = ke₂.value + pe₂.value
-
-  /-- Momentum conservation: in a closed system, total momentum is constant. -/
-  axiom momentumConservation
-    (p₁ p₂ : ExactQ dimMomentum)
-    (h : p₁.value = p₂.value)
-    : p₁.value = p₂.value
+  /-- Noether symmetries: conservation laws derived from continuous symmetries. -/
+  symmetry time_translation
+  symmetry space_translation
+  symmetry rotation
 
 -- ============================================================
 -- If we reach here, the theory compiled successfully.
 -- Phase 6 verified:
---   ✓ All axioms are dimensionally consistent
---   ✓ No conservation law violations detected
---   ✓ Theory 'NewtonianGravity' is self-consistent
+--   All axioms are dimensionally consistent
+--   No conservation law violations detected
+--   Conservation laws derived from declared symmetries:
+--     time_translation  -> energy conservation
+--     space_translation -> momentum conservation
+--     rotation          -> angular momentum conservation
+--   Theory 'NewtonianGravity' is self-consistent
 -- ============================================================
 
 -- We can also prove theorems *within* the theory using tactics:

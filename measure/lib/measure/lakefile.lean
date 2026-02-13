@@ -1,24 +1,41 @@
 import Lake
 open Lake DSL
 
--- In unified fork mode, the C++ kernel extensions are compiled
--- directly into the lean4 binary via CMake (MEASURE_EXTENSIONS=ON).
--- No separate static library linking is needed here.
---
--- The ffi_bridge.cpp is compiled into the lean4 kernel itself via CMake,
--- so Lake does not need to compile it separately. Include paths for the
--- kernel headers are handled by the CMake build.
-
 package measure where
   leanOptions := #[
     ⟨`autoImplicit, false⟩
   ]
-  -- In fork mode, kernel extensions (including ffi_bridge.o) are already
-  -- linked into the lean/leanc binary. No extra moreLinkArgs needed.
-  moreLinkArgs := #[]
+  moreLinkArgs := #["-lstdc++"]
 
 require mathlib from git
   "https://github.com/leanprover-community/mathlib4" @ "master"
+
+/-- Compile the C++ kernel sources into a static FFI library. -/
+extern_lib «measure-ffi» pkg := do
+  let srcDir := pkg.dir / ".." / ".." / "src"
+  let kernelDir := srcDir / "kernel"
+  let buildDir := pkg.dir / "build" / "ir"
+  let includeFlag := s!"-I{srcDir}"
+  let leanIncDir ← getLeanIncludeDir
+  let leanIncFlag := s!"-I{leanIncDir}"
+  let weakFlags := #[includeFlag, leanIncFlag]
+  let traceFlags := #["-std=c++17", "-fPIC", "-O2"]
+  let cppFiles := #[
+    "approx_eq",
+    "rigor_propagation",
+    "measure_metadata",
+    "theory_module",
+    "epsilon_tracker",
+    "is_approx_eq",
+    "theory_graph",
+    "conservation",
+    "ffi_bridge"
+  ]
+  let oFiles ← cppFiles.mapM fun name => do
+    let srcJob ← inputTextFile (kernelDir / s!"{name}.cpp")
+    buildO (buildDir / s!"{name}.o") srcJob weakFlags traceFlags "c++"
+  let libFile := pkg.dir / "build" / "lib" / nameToStaticLib "measure-ffi"
+  buildStaticLib libFile oFiles
 
 @[default_target]
 lean_lib Measure where

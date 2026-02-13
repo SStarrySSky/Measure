@@ -76,12 +76,4 @@ structure EngineCapabilities where
   supportedTypes   : List String := []
   deriving Repr, Inhabited
 
-/-- Progress notification from engine during long computations. -/
-structure ProgressNotification where
-  requestId          : Nat
-  progress           : Float  -- 0.0 to 1.0
-  message            : Option String := none
-  conservationStatus : List (String × Float × Bool) := []
-  deriving Repr, Inhabited
-
 end Measure.External

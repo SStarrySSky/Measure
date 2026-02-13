@@ -147,13 +147,4 @@ def fromRpcMethod : String → Option EngineMethod
 
 end EngineMethod
 
-/-- Protocol version for compatibility checking. -/
-structure ProtocolVersion where
-  major : Nat
-  minor : Nat
-  patch : Nat
-  deriving DecidableEq, Repr, Inhabited, BEq
-
-def protocolVersion : ProtocolVersion := { major := 0, minor := 1, patch := 0 }
-
 end Measure.External

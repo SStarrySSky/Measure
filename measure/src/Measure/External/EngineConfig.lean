@@ -79,21 +79,4 @@ def defaultMathematicaConfig : EngineConfig :=
       { measureType := "SymbolicExpr", engineType := "Expression" }
     ] }
 
-/-- Full engine registry from measure-engines.toml. -/
-structure EngineRegistry where
-  engines : List EngineConfig := [defaultJuliaConfig, defaultMathematicaConfig]
-  deriving Repr, Inhabited
-
-namespace EngineRegistry
-
-/-- Find an engine config by kind. -/
-def findByKind (reg : EngineRegistry) (kind : EngineKind) : Option EngineConfig :=
-  reg.engines.find? fun e => e.kind == kind
-
-/-- Find an engine config by adapter name. -/
-def findByAdapter (reg : EngineRegistry) (adapter : String) : Option EngineConfig :=
-  reg.engines.find? fun e => e.adapter == adapter
-
-end EngineRegistry
-
 end Measure.External

@@ -4,6 +4,9 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 Example: Electromagnetic wave theory using Maxwell's equations.
 
+For the mathematical (ℝ-based) formulation with validity conditions,
+see Measure.Physics.Historical.ApproximateTheories
+
 Demonstrates:
   - Defining EM-specific dimensions (electric field, magnetic field, etc.)
   - Plane wave solutions to Maxwell's equations
@@ -136,18 +139,18 @@ theory ElectromagneticWave where
     (B : ExactQ emDimMagneticField)
     : ExactQ dimForce
 
-  /-- Energy conservation: the total EM energy in a closed region is conserved.
-      Poynting's theorem: du/dt + div S = -J . E. -/
-  axiom energyConservation
-    (u1 u2 : ExactQ dimEnergyDensity)
-    (h : u1.value = u2.value)
-    : u1.value = u2.value
+  /-- Noether symmetries: conservation laws from continuous symmetries. -/
+  symmetry time_translation
+  symmetry gauge_U1
 
 -- ============================================================
 -- If we reach here, the theory compiled successfully.
 -- Phase 6 verified:
 --   All axioms are dimensionally consistent
 --   No conservation law violations detected
+--   Conservation laws derived from declared symmetries:
+--     time_translation -> energy conservation (Poynting's theorem)
+--     gauge_U1         -> charge conservation
 --   Theory 'ElectromagneticWave' is self-consistent
 -- ============================================================
 

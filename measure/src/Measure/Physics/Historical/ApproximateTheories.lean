@@ -25,6 +25,9 @@ noncomputable def G : ℝ := 6.67430e-11
 /-- Speed of light. -/
 noncomputable def c_light : ℝ := 299792458
 
+-- For the formal theory-block version with dimensional type safety,
+-- see Measure.Examples.NewtonianGravity
+
 /-- Newtonian gravity as an approximate theory.
     Exact theory: general relativity (Einstein, 1915).
     Valid when v ≪ c and Φ/c² ≪ 1.
@@ -66,6 +69,9 @@ Error: O(α) ≈ O(1/137) for quantum corrections. -/
 
 /-- Fine structure constant α ≈ 1/137. -/
 noncomputable def fineStructureConstant : ℝ := 1 / 137.035999084
+
+-- For the formal theory-block version with dimensional type safety,
+-- see Measure.Examples.ElectromagneticWave
 
 /-- Classical electrodynamics as an approximate theory.
     Exact theory: quantum electrodynamics (QED).

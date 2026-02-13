@@ -15,8 +15,6 @@ import Measure.External.DataSource
 import Measure.External.NIST
 import Measure.External.PDG
 import Measure.External.Cache
-import Measure.External.Transport
-import Measure.External.Lifecycle
 import Measure.External.DatabaseAttr
 import Measure.External.Engine
 import Measure.External.Compute

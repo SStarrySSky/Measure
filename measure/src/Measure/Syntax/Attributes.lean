@@ -87,39 +87,3 @@ structure MeasureMetadata where
   tolerance    : Option Float            := none
   unitName     : Option String           := none
   deriving Repr, Inhabited
-
-/-- Entry in the unit registry, tagged by @[unit]. -/
-structure UnitRegistryEntry where
-  declName : Name
-  unitName : String
-  symbol   : String := ""
-  dim      : List Int := []  -- exponent vector [L,M,T,I,Θ,N,J]
-  toSI     : Float := 1.0
-  offset   : Float := 0.0
-  system   : String := "SI"
-  deriving Repr, Inhabited
-
-/-- Unit registry: collects all @[unit]-tagged declarations. -/
-structure UnitRegistry where
-  entries : List UnitRegistryEntry := []
-  deriving Repr, Inhabited
-
-namespace UnitRegistry
-
-/-- Register a new unit entry. -/
-def register (reg : UnitRegistry) (entry : UnitRegistryEntry) : UnitRegistry :=
-  { entries := reg.entries ++ [entry] }
-
-/-- Look up a unit by name. -/
-def findByName (reg : UnitRegistry) (name : String) : Option UnitRegistryEntry :=
-  reg.entries.find? fun e => e.unitName == name
-
-/-- Look up a unit by symbol. -/
-def findBySymbol (reg : UnitRegistry) (sym : String) : Option UnitRegistryEntry :=
-  reg.entries.find? fun e => e.symbol == sym
-
-/-- List all units for a given system. -/
-def forSystem (reg : UnitRegistry) (sys : String) : List UnitRegistryEntry :=
-  reg.entries.filter fun e => e.system == sys
-
-end UnitRegistry

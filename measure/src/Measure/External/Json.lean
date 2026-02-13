@@ -76,15 +76,6 @@ instance : FromJson EngineMethod where
                 | none   => .error s!"Unknown engine method: {s}"
     | j      => .error s!"Expected string for EngineMethod, got {j}"
 
-instance : ToJson ProtocolVersion where
-  toJson v := .mkObj [("major", toJson v.major), ("minor", toJson v.minor), ("patch", toJson v.patch)]
-
-instance : FromJson ProtocolVersion where
-  fromJson? j := do
-    return { major := ← j.getObjValAs? Nat "major"
-             minor := ← j.getObjValAs? Nat "minor"
-             patch := ← j.getObjValAs? Nat "patch" }
-
 -- ============================================================
 -- Messages types
 -- ============================================================
@@ -258,21 +249,5 @@ instance : FromJson EngineCapabilities where
              adapterVersion := ← j.getObjValAs? String "adapter_version"
              supportedMethods := (j.getObjValAs? (List String) "supported_methods").toOption.getD []
              supportedTypes := (j.getObjValAs? (List String) "supported_types").toOption.getD [] }
-
-instance : ToJson ProgressNotification where
-  toJson p := .mkObj <|
-    [ ("request_id", toJson p.requestId)
-    , ("progress", toJson p.progress) ]
-    ++ match p.message with | some m => [("message", toJson m)] | none => []
-    ++ if p.conservationStatus.isEmpty then []
-       else [("conservation_status", toJson (p.conservationStatus.map fun (n, v, ok) =>
-         Json.mkObj [("name", toJson n), ("value", toJson v), ("ok", toJson ok)]))]
-
-instance : FromJson ProgressNotification where
-  fromJson? j := do
-    return { requestId := ← j.getObjValAs? Nat "request_id"
-             progress := ← j.getObjValAs? Float "progress"
-             message := (j.getObjValAs? String "message").toOption
-             conservationStatus := [] }
 
 end Measure.External

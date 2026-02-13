@@ -121,25 +121,25 @@ theory QuantumHarmonic where
 
   /-- Heisenberg uncertainty principle: Delta x * Delta p >= hbar / 2.
       [Delta x * Delta p] = L * (M L T^{-1}) = M L^2 T^{-1} = [action] = [hbar].
-      The ground state of the harmonic oscillator saturates this bound. -/
+      The ground state of the harmonic oscillator saturates this bound.
+      This is a fundamental quantum bound, not derivable from classical mechanics. -/
   axiom uncertaintyPrinciple
     (dx : ExactQ dimLength)
     (dp : ExactQ dimMomentum)
     (hb : ExactQ qmDimAction)
-    (h : dx.value * dp.value >= hb.value / 2.0)
     : dx.value * dp.value >= hb.value / 2.0
 
-  /-- Energy conservation: total energy is constant for a time-independent Hamiltonian. -/
-  axiom energyConservation
-    (E1 E2 : ExactQ dimEnergy)
-    (h : E1.value = E2.value)
-    : E1.value = E2.value
+  /-- Noether symmetry: time-translation invariance implies energy conservation
+      for a time-independent Hamiltonian. -/
+  symmetry time_translation
 
 -- ============================================================
 -- If we reach here, the theory compiled successfully.
 -- Phase 6 verified:
 --   All axioms are dimensionally consistent
 --   No conservation law violations detected
+--   Conservation laws derived from declared symmetries:
+--     time_translation -> energy conservation
 --   Theory 'QuantumHarmonic' is self-consistent
 -- ============================================================
 

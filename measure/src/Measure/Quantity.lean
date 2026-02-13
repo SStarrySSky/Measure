@@ -11,6 +11,7 @@ import Measure.Quantity.Ops
 import Measure.Quantity.MixedOps
 import Measure.Quantity.Audit
 import Measure.Quantity.Bridge
+import Measure.Quantity.Notation
 
 /-! # Quantity Module
 

@@ -38,32 +38,6 @@ structure VerifyVerdict where
   failures  : List VerifyFailure := []
   deriving Repr, Inhabited
 
-/-- Type alias for a custom verification hook function.
-    Takes the check name, context, and response; returns a VerifyResult. -/
-def CustomVerifyHook := String → VerifyContext → ComputeResponse → VerifyResult
-
-/-- Registry of custom verification hooks. -/
-structure VerifyHookRegistry where
-  hooks : List (String × CustomVerifyHook) := []
-  deriving Inhabited
-
-namespace VerifyHookRegistry
-
-/-- Register a named custom verification hook. -/
-def register (reg : VerifyHookRegistry) (name : String)
-    (hook : CustomVerifyHook) : VerifyHookRegistry :=
-  { hooks := reg.hooks ++ [(name, hook)] }
-
-/-- Unregister a hook by name. -/
-def unregister (reg : VerifyHookRegistry) (name : String) : VerifyHookRegistry :=
-  { hooks := reg.hooks.filter fun (n, _) => n != name }
-
-/-- Look up a hook by name. -/
-def find? (reg : VerifyHookRegistry) (name : String) : Option CustomVerifyHook :=
-  reg.hooks.find? (·.1 == name) |>.map (·.2)
-
-end VerifyHookRegistry
-
 namespace Verifier
 
 /-- Run dimensional consistency check on a result. -/
@@ -102,11 +76,9 @@ def checkCompleteness (expected actual : Nat) : VerifyResult :=
     passed := passed
     detail := s!"Expected {expected} results, got {actual}" }
 
-/-- Run all requested verification checks against a response.
-    Custom checks are dispatched to the hook registry. -/
+/-- Run all requested verification checks against a response. -/
 def verify (ctx : VerifyContext) (checks : List VerifyCheck)
-    (response : ComputeResponse)
-    (hookRegistry : VerifyHookRegistry := {}) : VerifyVerdict :=
+    (response : ComputeResponse) : VerifyVerdict :=
   let results := checks.map fun check =>
     match check with
     | .dimCheck =>
@@ -134,9 +106,6 @@ def verify (ctx : VerifyContext) (checks : List VerifyCheck)
       | none => { check := .completeness, passed := true,
                   detail := "Skipped: no expected count" }
     | .custom name =>
-      match hookRegistry.find? name with
-      | some hook => hook name ctx response
-      | none =>
         { check := .custom name, passed := true,
           detail := s!"Custom check '{name}' not implemented" }
   let failures := results.filter (!·.passed) |>.map fun r =>

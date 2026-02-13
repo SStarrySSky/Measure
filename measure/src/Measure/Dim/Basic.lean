@@ -139,7 +139,36 @@ def sqrt (a : Dim) : Dim :=
 instance : HMul Dim Dim Dim := ⟨mul⟩
 instance : HDiv Dim Dim Dim := ⟨div⟩
 
+/-- Raise a dimension to a natural-number power. -/
+def natPow (a : Dim) (n : Nat) : Dim :=
+  pow a (QExp.mk' (Int.ofNat n) 1)
+
 end Dim
+
+-- ============================================================
+-- ToString instances
+-- ============================================================
+
+/-- Display a QExp as a string like "2", "1/2", "0". -/
+instance : ToString QExp where
+  toString q :=
+    if q.den == 1 then s!"{q.num}"
+    else s!"{q.num}/{q.den}"
+
+/-- Display a Dim as a human-readable dimension string like "[M L^2 T^-2]". -/
+instance : ToString Dim where
+  toString d :=
+    let parts : List String := [
+      if !d.L.isZero then some s!"L^{d.L}" else none,
+      if !d.M.isZero then some s!"M^{d.M}" else none,
+      if !d.T.isZero then some s!"T^{d.T}" else none,
+      if !d.I.isZero then some s!"I^{d.I}" else none,
+      if !d.Θ.isZero then some s!"Θ^{d.Θ}" else none,
+      if !d.N.isZero then some s!"N^{d.N}" else none,
+      if !d.J.isZero then some s!"J^{d.J}" else none
+    ].filterMap id
+    if parts.isEmpty then "[1]"
+    else "[" ++ String.intercalate " " parts ++ "]"
 
 -- Common derived dimensions
 
@@ -172,5 +201,7 @@ def Inductance       : Dim := { L := QExp.mk' 2 1, M := QExp.one, T := QExp.mk' 
 def MagneticFlux     : Dim := { L := QExp.mk' 2 1, M := QExp.one, T := QExp.mk' (-2) 1, I := QExp.mk' (-1) 1 }
 /-- Magnetic flux density: M T⁻² I⁻¹ (T). -/
 def MagneticFluxDens : Dim := { M := QExp.one, T := QExp.mk' (-2) 1, I := QExp.mk' (-1) 1 }
+/-- Frequency: T⁻¹ (Hz). -/
+def Frequency : Dim := { T := -QExp.one }
 
 end Measure.Dim

@@ -140,31 +140,25 @@ theory ClassicalThermodynamics where
     : ExactQ dimEnergy
 
   /-- First law of thermodynamics: dU = delta Q - delta W.
-      All three terms have energy dimension.
-      Internal energy change = heat added - work done. -/
-  axiom firstLaw
-    (dU Q W : ExactQ dimEnergy)
-    (h : dU.value = Q.value - W.value)
-    : dU.value = Q.value - W.value
+      Given heat added Q and work done W, returns the internal energy change.
+      All terms have energy dimension M L^2 T^{-2}. -/
+  axiom firstLaw (Q W : ExactQ dimEnergy) : ExactQ dimEnergy
 
   /-- Second law: total entropy of an isolated system never decreases.
-      Delta S >= 0 for any spontaneous process. -/
-  axiom secondLaw
-    (dS : ExactQ tdDimEntropy)
-    (h : dS.value >= 0.0)
-    : dS.value >= 0.0
+      Delta S >= 0 for any spontaneous process.
+      Returns the non-negative entropy change. -/
+  axiom secondLaw (S_final S_initial : ExactQ tdDimEntropy) : ExactQ tdDimEntropy
 
-  /-- Energy conservation: total energy is conserved in a closed system. -/
-  axiom energyConservation
-    (E1 E2 : ExactQ dimEnergy)
-    (h : E1.value = E2.value)
-    : E1.value = E2.value
+  /-- Noether symmetry: time-translation invariance implies energy conservation. -/
+  symmetry time_translation
 
 -- ============================================================
 -- If we reach here, the theory compiled successfully.
 -- Phase 6 verified:
 --   All axioms are dimensionally consistent
 --   No conservation law violations detected
+--   Conservation laws derived from declared symmetries:
+--     time_translation -> energy conservation
 --   Theory 'ClassicalThermodynamics' is self-consistent
 -- ============================================================
 
