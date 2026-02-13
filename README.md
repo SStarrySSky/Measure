@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">⚛️ Measure</h1>
+  <h1 align="center">📏 Measure</h1>
   <p align="center">
     <em>A formal language for physics — where compilation is proof.</em>
   </p>
