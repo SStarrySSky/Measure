@@ -137,4 +137,112 @@ instance {α : Type} [UncertaintyModel α] {d : Dim} :
       error := UncertaintyModel.scale s q.error
       provenance := .applyOp "scale" q.provenance }
 
+-- ============================================================
+-- Core Quantity mixed ops: Quantity d .exact + Quantity d (.uncertain model)
+-- Promotes exact side to zero-uncertainty, result is uncertain.
+-- ============================================================
+
+/-- Promote a Quantity d .exact to Quantity d (.uncertain model) with zero uncertainty. -/
+def promoteExactQ {d : Dim} {model : Type} [UncertaintyModel model]
+    (q : Quantity d .exact) : Quantity d (.uncertain model) :=
+  { value := q.value
+    error := UncertaintyModel.fromExact q.value
+    provenance := q.provenance }
+
+-- exact + uncertain = uncertain
+instance {model : Type} [UncertaintyModel model] {d : Dim} :
+    HAdd (Quantity d .exact) (Quantity d (.uncertain model))
+         (Quantity d (.uncertain model)) where
+  hAdd a b :=
+    let a' : Quantity d (.uncertain model) := promoteExactQ a
+    let ea : model := a'.error
+    let eb : model := b.error
+    { value := a.value + b.value
+      error := UncertaintyModel.add ea eb
+      provenance := .combine "add" a.provenance b.provenance }
+
+-- uncertain + exact = uncertain
+instance {model : Type} [UncertaintyModel model] {d : Dim} :
+    HAdd (Quantity d (.uncertain model)) (Quantity d .exact)
+         (Quantity d (.uncertain model)) where
+  hAdd a b :=
+    let b' : Quantity d (.uncertain model) := promoteExactQ b
+    let ea : model := a.error
+    let eb : model := b'.error
+    { value := a.value + b.value
+      error := UncertaintyModel.add ea eb
+      provenance := .combine "add" a.provenance b.provenance }
+
+-- exact - uncertain = uncertain
+instance {model : Type} [UncertaintyModel model] {d : Dim} :
+    HSub (Quantity d .exact) (Quantity d (.uncertain model))
+         (Quantity d (.uncertain model)) where
+  hSub a b :=
+    let a' : Quantity d (.uncertain model) := promoteExactQ a
+    let ea : model := a'.error
+    let eb : model := b.error
+    { value := a.value - b.value
+      error := UncertaintyModel.sub ea eb
+      provenance := .combine "sub" a.provenance b.provenance }
+
+-- uncertain - exact = uncertain
+instance {model : Type} [UncertaintyModel model] {d : Dim} :
+    HSub (Quantity d (.uncertain model)) (Quantity d .exact)
+         (Quantity d (.uncertain model)) where
+  hSub a b :=
+    let b' : Quantity d (.uncertain model) := promoteExactQ b
+    let ea : model := a.error
+    let eb : model := b'.error
+    { value := a.value - b.value
+      error := UncertaintyModel.sub ea eb
+      provenance := .combine "sub" a.provenance b.provenance }
+
+-- exact * uncertain = uncertain (dimensions multiply)
+instance {model : Type} [UncertaintyModel model] {d1 d2 : Dim} :
+    HMul (Quantity d1 .exact) (Quantity d2 (.uncertain model))
+         (Quantity (Dim.mul d1 d2) (.uncertain model)) where
+  hMul a b :=
+    let a' : Quantity d1 (.uncertain model) := promoteExactQ a
+    let ea : model := a'.error
+    let eb : model := b.error
+    { value := a.value * b.value
+      error := UncertaintyModel.mul ea eb a.value b.value
+      provenance := .combine "mul" a.provenance b.provenance }
+
+-- uncertain * exact = uncertain (dimensions multiply)
+instance {model : Type} [UncertaintyModel model] {d1 d2 : Dim} :
+    HMul (Quantity d1 (.uncertain model)) (Quantity d2 .exact)
+         (Quantity (Dim.mul d1 d2) (.uncertain model)) where
+  hMul a b :=
+    let b' : Quantity d2 (.uncertain model) := promoteExactQ b
+    let ea : model := a.error
+    let eb : model := b'.error
+    { value := a.value * b.value
+      error := UncertaintyModel.mul ea eb a.value b.value
+      provenance := .combine "mul" a.provenance b.provenance }
+
+-- exact / uncertain = uncertain (dimensions divide)
+instance {model : Type} [UncertaintyModel model] {d1 d2 : Dim} :
+    HDiv (Quantity d1 .exact) (Quantity d2 (.uncertain model))
+         (Quantity (Dim.div d1 d2) (.uncertain model)) where
+  hDiv a b :=
+    let a' : Quantity d1 (.uncertain model) := promoteExactQ a
+    let ea : model := a'.error
+    let eb : model := b.error
+    { value := a.value / b.value
+      error := UncertaintyModel.div ea eb a.value b.value
+      provenance := .combine "div" a.provenance b.provenance }
+
+-- uncertain / exact = uncertain (dimensions divide)
+instance {model : Type} [UncertaintyModel model] {d1 d2 : Dim} :
+    HDiv (Quantity d1 (.uncertain model)) (Quantity d2 .exact)
+         (Quantity (Dim.div d1 d2) (.uncertain model)) where
+  hDiv a b :=
+    let b' : Quantity d2 (.uncertain model) := promoteExactQ b
+    let ea : model := a.error
+    let eb : model := b'.error
+    { value := a.value / b.value
+      error := UncertaintyModel.div ea eb a.value b.value
+      provenance := .combine "div" a.provenance b.provenance }
+
 end Measure.Quantity

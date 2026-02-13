@@ -10,33 +10,17 @@ import Measure.Error.UncertaintyModel
 
 namespace Measure.Error
 
-/-- Noise symbol ID (globally unique). -/
+/-- Noise symbol ID (unique within a computation graph). -/
 structure NoiseId where
   id : Nat
   deriving DecidableEq, Repr, Inhabited, BEq, Hashable, Ord
 
-namespace NoiseId
-
-private unsafe def counterRef : IO.Ref Nat :=
-  let f : BaseIO (IO.Ref Nat) := IO.mkRef (0 : Nat)
-  let g : Unit → IO.Ref Nat := unsafeCast f
-  g ()
-
-unsafe def freshUnsafe : NoiseId :=
-  let r := counterRef
-  let act : BaseIO Nat := r.modifyGet fun n => (n, n + 1)
-  let g : Unit → Nat := unsafeCast act
-  { id := g () }
-
-@[implemented_by freshUnsafe]
-opaque fresh : NoiseId
-
-end NoiseId
-
-/-- Affine form: x_hat = x0 + sum(xi * ei), each ei in [-1, 1]. -/
+/-- Affine form: x_hat = x0 + sum(xi * ei), each ei in [-1, 1].
+    Carries a `nextId` counter so fresh noise symbols are allocated purely. -/
 structure Affine where
   center : Float
   terms  : Std.HashMap NoiseId Float
+  nextId : Nat := 0
   deriving Repr, Inhabited
 
 namespace Affine
@@ -50,15 +34,24 @@ def toInterval (a : Affine) : Float × Float :=
   let r := a.radius
   (a.center - r, a.center + r)
 
+/-- Allocate a fresh noise symbol, returning the ID and the updated form. -/
+def freshId (a : Affine) : NoiseId × Affine :=
+  (⟨a.nextId⟩, { a with nextId := a.nextId + 1 })
+
+/-- Merge the `nextId` counters of two forms so subsequent allocations are unique. -/
+def mergeNextId (a b : Affine) : Nat :=
+  Nat.max a.nextId b.nextId
+
 /-- Create from uncertain measurement (new noise symbol). -/
 def fromUncertain (val halfWidth : Float) : Affine :=
-  let eid := NoiseId.fresh
+  let eid : NoiseId := ⟨0⟩
   { center := val
-  , terms := (∅ : Std.HashMap NoiseId Float) |>.insert eid halfWidth }
+  , terms := (∅ : Std.HashMap NoiseId Float) |>.insert eid halfWidth
+  , nextId := 1 }
 
 /-- Create from exact value (no noise terms). -/
 def exact (val : Float) : Affine :=
-  { center := val, terms := ∅ }
+  { center := val, terms := ∅, nextId := 0 }
 
 end Affine
 

@@ -53,7 +53,7 @@ def withTheory (m : MeasureMetadata) (t : TheoryId) : MeasureMetadata :=
 
 /-- Get rigor level as a RigorLevel enum. -/
 def getRigor (m : MeasureMetadata) : RigorLevel :=
-  RigorLevel.ofUInt8 m.getRigorRaw
+  Measure.Theory.RigorLevel.ofUInt8 m.getRigorRaw
 
 /-- Set rigor level from a RigorLevel enum. -/
 def setRigor (m : MeasureMetadata) (r : RigorLevel) : MeasureMetadata :=
@@ -154,7 +154,7 @@ end ApproxEqChecker
 
 /-- Propagate rigor level (weakest link rule). -/
 def propagateRigor (a b : RigorLevel) : RigorLevel :=
-  RigorLevel.ofUInt8 (Rigor.propagateRaw a.toUInt8 b.toUInt8)
+  Measure.Theory.RigorLevel.ofUInt8 (Rigor.propagateRaw a.toUInt8 b.toUInt8)
 
 /-- Check if actual rigor is compatible with declared. -/
 def isRigorCompatible (declared actual : RigorLevel) : Bool :=

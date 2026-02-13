@@ -26,3 +26,8 @@ nul
 *.log
 *.tmp
 *.bak
+
+# Architecture/design docs (internal only)
+ARCHITECTURE.md
+DESIGN.md
+docs/

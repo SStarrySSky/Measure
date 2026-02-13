@@ -231,7 +231,9 @@ static bool check_forall_exists_conflict(
     // Pattern: "forall <var>, <body>" vs "exists <var>, not <body>"
     auto extract_forall = [](std::string const & s)
         -> std::pair<std::string, std::string> {
-        if (s.substr(0, 7) == "forall " || s.substr(0, 4) == "All ") {
+        // "forall ", "All ", or Unicode "∀ " (UTF-8: \xE2\x88\x80)
+        if (s.substr(0, 7) == "forall " || s.substr(0, 4) == "All " ||
+            s.compare(0, 4, "\xE2\x88\x80 ") == 0) {
             auto comma = s.find(',');
             if (comma != std::string::npos && comma + 2 < s.size()) {
                 return {s.substr(0, comma), s.substr(comma + 2)};
@@ -242,12 +244,17 @@ static bool check_forall_exists_conflict(
 
     auto extract_exists_not = [](std::string const & s)
         -> std::pair<std::string, std::string> {
-        if (s.substr(0, 7) == "exists " || s.substr(0, 3) == "Ex ") {
+        // "exists ", "Ex ", or Unicode "∃ " (UTF-8: \xE2\x88\x83)
+        if (s.substr(0, 7) == "exists " || s.substr(0, 3) == "Ex " ||
+            s.compare(0, 4, "\xE2\x88\x83 ") == 0) {
             auto comma = s.find(',');
             if (comma != std::string::npos && comma + 2 < s.size()) {
                 std::string body = s.substr(comma + 2);
-                if (body.substr(0, 4) == "not " || body.substr(0, 2) == "! ") {
-                    size_t skip = (body[0] == 'n') ? 4 : 2;
+                // "not ", "! ", or Unicode "¬" (UTF-8: \xC2\xAC)
+                if (body.substr(0, 4) == "not " || body.substr(0, 2) == "! " ||
+                    body.compare(0, 2, "\xC2\xAC") == 0) {
+                    size_t skip = (body[0] == 'n') ? 4 :
+                                  (body[0] == '!') ? 2 : 2; // ¬ is 2 bytes
                     return {s.substr(0, comma), body.substr(skip)};
                 }
             }
@@ -291,11 +298,20 @@ static bool check_eq_neq_conflict(
 
     auto extract_neq = [](std::string const & s)
         -> std::pair<std::string, std::string> {
+        // Check ASCII separators
         for (auto sep : {" != ", " /= "}) {
             auto pos = s.find(sep);
             if (pos != std::string::npos) {
                 size_t len = std::strlen(sep);
                 return {s.substr(0, pos), s.substr(pos + len)};
+            }
+        }
+        // Check Unicode ≠ (UTF-8: \xE2\x89\xA0)
+        {
+            std::string usep = " \xE2\x89\xA0 ";
+            auto pos = s.find(usep);
+            if (pos != std::string::npos) {
+                return {s.substr(0, pos), s.substr(pos + usep.size())};
             }
         }
         return {"", ""};
@@ -317,100 +333,273 @@ static bool check_eq_neq_conflict(
     return false;
 }
 
-// ── Stage 3: Semantic analysis helpers ──────────────────────────
+// ── Stage 3: Semantic normalization helpers ─────────────────────
 
-/// Semantic conflict check via WHNF-style normalization.
-/// Normalizes axiom strings and checks for deeper contradictions
-/// that syntactic screening misses.
+/// Strip universe annotations like `.{u}`, `.{u, v}` from a string.
+/// Matches the Lean `stripUniverses` function.
+static std::string strip_universes(std::string const & s) {
+    std::string out;
+    out.reserve(s.size());
+    int depth = 0;
+    for (size_t i = 0; i < s.size(); ++i) {
+        if (i + 1 < s.size() && s[i] == '.' && s[i + 1] == '{') {
+            depth++;
+            i++; // skip the '{' as well
+            continue;
+        }
+        if (s[i] == '{' && depth > 0) {
+            depth++;
+            continue;
+        }
+        if (s[i] == '}' && depth > 0) {
+            depth--;
+            continue;
+        }
+        if (depth > 0) continue;
+        out += s[i];
+    }
+    return out;
+}
+
+/// Expand common type aliases to canonical names.
+/// Matches the Lean `expandAlias` function.
+static std::string expand_alias(std::string const & word) {
+    // UTF-8 encoded Unicode symbols
+    if (word == "\xe2\x84\x9d") return "Real";       // ℝ
+    if (word == "\xe2\x84\x82") return "Complex";     // ℂ
+    if (word == "\xe2\x84\x95") return "Nat";         // ℕ
+    if (word == "\xe2\x84\xa4") return "Int";         // ℤ
+    if (word == "\xe2\x84\x9a") return "Rat";         // ℚ
+    if (word == "\xe2\x84\x8f") return "hbar";        // ℏ
+    if (word == "\xce\xb1")     return "fine_structure_constant"; // α
+    return word;
+}
+
+/// Full semantic normalization pipeline for an axiom type string:
+///   1. Trim/collapse whitespace
+///   2. Strip universe annotations
+///   3. Expand type aliases word by word
+///   4. Re-normalize whitespace
+/// Returns a canonical string for comparison.
+/// Matches the Lean `semanticNormalize` function.
+static std::string semantic_normalize(std::string const & s) {
+    std::string r = normalize_axiom(s);
+    r = strip_universes(r);
+    // Expand aliases word by word
+    std::string result;
+    std::string word;
+    for (size_t i = 0; i <= r.size(); ++i) {
+        if (i < r.size() && r[i] != ' ') {
+            word += r[i];
+        } else {
+            if (!word.empty()) {
+                if (!result.empty()) result += ' ';
+                result += expand_alias(word);
+                word.clear();
+            }
+        }
+    }
+    return normalize_axiom(result);
+}
+
+/// Check if two axiom type strings are semantically contradictory
+/// after full normalization. Re-runs the Stage 2 syntactic patterns
+/// (negation, forall/exists, eq/neq) on normalized forms.
+/// Matches the Lean `areSemanticConflict` function.
+static bool are_semantic_conflict(std::string const & type_a,
+                                  std::string const & type_b) {
+    std::string na = semantic_normalize(type_a);
+    std::string nb = semantic_normalize(type_b);
+    // Direct negation after normalization
+    // "not P", "not_P", or Unicode "¬P" (UTF-8: \xC2\xAC)
+    bool negation =
+        (na == "not " + nb) || (nb == "not " + na) ||
+        (na == "not_" + nb) || (nb == "not_" + na) ||
+        (na == "\xC2\xAC" + nb) || (nb == "\xC2\xAC" + na);
+    if (negation) return true;
+    // Eq vs Neq after normalization
+    if (check_eq_neq_conflict(na, nb)) return true;
+    // Forall/Exists after normalization
+    if (check_forall_exists_conflict(na, nb)) return true;
+    return false;
+}
+
+/// Check if two axiom type strings define the same constant with
+/// different values after normalization.
+/// Detects "X = v1" vs "X = v2" where v1 != v2.
+/// Matches the Lean `areQuantitativeConflict` function.
+static std::optional<conflict_witness> are_quantitative_conflict(
+    std::string const & type_a, std::string const & type_b,
+    theory_id id_a, theory_id id_b)
+{
+    std::string na = semantic_normalize(type_a);
+    std::string nb = semantic_normalize(type_b);
+
+    // Extract "lhs = rhs" (but not "!=" or "==")
+    auto safe_extract_eq = [](std::string const & s)
+        -> std::pair<std::string, std::string> {
+        auto pos = s.find(" = ");
+        if (pos == std::string::npos) return {"", ""};
+        if (pos > 0 && s[pos - 1] == '!') return {"", ""};
+        if (pos > 0 && s[pos - 1] == '/') return {"", ""};
+        if (pos + 3 < s.size() && s[pos + 3] == '=') return {"", ""};
+        return {s.substr(0, pos), s.substr(pos + 3)};
+    };
+
+    auto [lhs_a, rhs_a] = safe_extract_eq(na);
+    auto [lhs_b, rhs_b] = safe_extract_eq(nb);
+
+    if (!lhs_a.empty() && !lhs_b.empty() &&
+        lhs_a == lhs_b && rhs_a != rhs_b) {
+        conflict_witness wit;
+        wit.m_proposition = lhs_a + " has conflicting values";
+        wit.m_proof_left = type_a;
+        wit.m_proof_right = type_b;
+        wit.m_kind = conflict_kind::quantitative;
+        wit.m_severity = conflict_severity::fundamental;
+        wit.m_left = id_a;
+        wit.m_right = id_b;
+        return wit;
+    }
+    return std::nullopt;
+}
+
+/// Check for structural conflict: same entity with incompatible types
+/// after normalization. Detects "X : T1" vs "X : T2" patterns.
+/// Matches the Lean `areStructuralConflict` function.
+static std::optional<conflict_witness> are_structural_conflict(
+    std::string const & type_a, std::string const & type_b,
+    theory_id id_a, theory_id id_b)
+{
+    std::string na = semantic_normalize(type_a);
+    std::string nb = semantic_normalize(type_b);
+
+    auto colon_a = na.find(" : ");
+    auto colon_b = nb.find(" : ");
+    if (colon_a != std::string::npos && colon_b != std::string::npos) {
+        std::string name_a = na.substr(0, colon_a);
+        std::string name_b = nb.substr(0, colon_b);
+        std::string ty_a = na.substr(colon_a + 3);
+        std::string ty_b = nb.substr(colon_b + 3);
+        if (name_a == name_b && ty_a != ty_b) {
+            conflict_witness wit;
+            wit.m_proposition = name_a + " has incompatible types";
+            wit.m_proof_left = type_a;
+            wit.m_proof_right = type_b;
+            wit.m_kind = conflict_kind::structural;
+            wit.m_severity = conflict_severity::fundamental;
+            wit.m_left = id_a;
+            wit.m_right = id_b;
+            return wit;
+        }
+    }
+    return std::nullopt;
+}
+
+/// Stage 3: Semantic conflict check.
+/// Normalizes axiom strings (strip universes, expand aliases, collapse
+/// whitespace) then re-runs contradiction checks on canonical forms.
+/// Catches conflicts that Stage 2 misses due to surface-level differences.
+/// Matches the Lean `semanticScreen` function.
 static std::optional<conflict_witness> semantic_conflict_check(
     theory_module const & mod_a, theory_module const & mod_b,
     theory_id id_a, theory_id id_b)
 {
-    // Build normalized axiom sets
-    std::vector<std::string> norm_a, norm_b;
-    norm_a.reserve(mod_a.m_axioms.size());
-    norm_b.reserve(mod_b.m_axioms.size());
-    for (auto const & ax : mod_a.m_axioms)
-        norm_a.push_back(normalize_axiom(ax));
-    for (auto const & ax : mod_b.m_axioms)
-        norm_b.push_back(normalize_axiom(ax));
+    // Check all axiom pairs for semantic contradictions, quantitative
+    // conflicts, and structural conflicts (on axiom strings).
+    for (size_t i = 0; i < mod_a.m_axioms.size(); ++i) {
+        for (size_t j = 0; j < mod_b.m_axioms.size(); ++j) {
+            auto const & ax_a = mod_a.m_axioms[i];
+            auto const & ax_b = mod_b.m_axioms[j];
 
-    // Check for quantitative conflicts:
-    // "X = <val1>" vs "X = <val2>" where val1 != val2
-    for (size_t i = 0; i < norm_a.size(); ++i) {
-        auto eq_pos_a = norm_a[i].find(" = ");
-        if (eq_pos_a == std::string::npos) continue;
-        std::string lhs_a = norm_a[i].substr(0, eq_pos_a);
-        std::string rhs_a = norm_a[i].substr(eq_pos_a + 3);
-
-        for (size_t j = 0; j < norm_b.size(); ++j) {
-            auto eq_pos_b = norm_b[j].find(" = ");
-            if (eq_pos_b == std::string::npos) continue;
-            std::string lhs_b = norm_b[j].substr(0, eq_pos_b);
-            std::string rhs_b = norm_b[j].substr(eq_pos_b + 3);
-
-            // Same LHS, different RHS -> quantitative conflict
-            if (lhs_a == lhs_b && rhs_a != rhs_b) {
+            // Semantic contradiction (negation, eq/neq, forall/exists
+            // after normalization)
+            if (are_semantic_conflict(ax_a, ax_b)) {
                 conflict_witness wit;
-                wit.m_proposition = lhs_a + " has conflicting values";
-                wit.m_proof_left = mod_a.m_axioms[i];
-                wit.m_proof_right = mod_b.m_axioms[j];
-                wit.m_kind = conflict_kind::quantitative;
+                wit.m_proposition = ax_a;
+                wit.m_proof_left = ax_a;
+                wit.m_proof_right = ax_b;
+                wit.m_kind = conflict_kind::direct;
                 wit.m_severity = conflict_severity::fundamental;
                 wit.m_left = id_a;
                 wit.m_right = id_b;
                 return wit;
             }
+
+            // Quantitative conflict (same LHS, different RHS in equalities)
+            auto quant = are_quantitative_conflict(ax_a, ax_b, id_a, id_b);
+            if (quant.has_value()) return quant;
+
+            // Structural conflict on axiom type annotations
+            auto struc = are_structural_conflict(ax_a, ax_b, id_a, id_b);
+            if (struc.has_value()) return struc;
         }
     }
 
-    // Check for structural conflicts:
-    // Same entity defined with incompatible types/properties
+    // Also check definitions for structural conflicts
     for (auto const & def_a : mod_a.m_definitions) {
         for (auto const & def_b : mod_b.m_definitions) {
-            auto na = normalize_axiom(def_a);
-            auto nb = normalize_axiom(def_b);
-            // "X : TypeA" vs "X : TypeB"
-            auto colon_a = na.find(" : ");
-            auto colon_b = nb.find(" : ");
-            if (colon_a != std::string::npos && colon_b != std::string::npos) {
-                std::string name_a = na.substr(0, colon_a);
-                std::string name_b = nb.substr(0, colon_b);
-                std::string type_a = na.substr(colon_a + 3);
-                std::string type_b = nb.substr(colon_b + 3);
-                if (name_a == name_b && type_a != type_b) {
-                    conflict_witness wit;
-                    wit.m_proposition = name_a + " has incompatible types";
-                    wit.m_proof_left = def_a;
-                    wit.m_proof_right = def_b;
-                    wit.m_kind = conflict_kind::structural;
-                    wit.m_severity = conflict_severity::fundamental;
-                    wit.m_left = id_a;
-                    wit.m_right = id_b;
-                    return wit;
-                }
-            }
+            auto struc = are_structural_conflict(def_a, def_b, id_a, id_b);
+            if (struc.has_value()) return struc;
         }
     }
 
     return std::nullopt;
 }
 
-// ── Stage 4: SMT delegation interface ───────────────────────────
+// ── Stage 4: SMT delegation via Lean FFI callback ───────────────
 
-/// Delegate axiom compatibility checking to an external SMT solver.
-/// Accepts two sets of axiom strings, encodes them as SMT-LIB assertions,
-/// and queries for satisfiability of the combined set.
+/// Global callback registered from Lean side.
+/// Signature: (axioms_a_joined, axioms_b_joined, id_a, id_b) -> 0=compatible, 1=conflict, 2=inconclusive
+static std::function<uint8_t(std::string const &, std::string const &,
+                              theory_id, theory_id)>
+    g_smt_callback = nullptr;
+
+void register_smt_callback(
+    std::function<uint8_t(std::string const &, std::string const &,
+                           theory_id, theory_id)> cb)
+{
+    g_smt_callback = std::move(cb);
+}
+
+/// Delegate axiom compatibility checking to an external SMT solver
+/// via Lean's External engine infrastructure.
 /// Returns a conflict_witness if the solver finds UNSAT (contradiction),
 /// or nullopt if SAT (compatible) or if the solver is unavailable.
 static std::optional<conflict_witness> delegate_to_smt(
-    std::vector<std::string> const & /* axioms_a */,
-    std::vector<std::string> const & /* axioms_b */,
-    theory_id /* id_a */,
-    theory_id /* id_b */)
+    std::vector<std::string> const & axioms_a,
+    std::vector<std::string> const & axioms_b,
+    theory_id id_a,
+    theory_id id_b)
 {
-    // Not yet connected to an external SMT solver.
-    return std::nullopt;
+    if (!g_smt_callback) {
+        return std::nullopt;
+    }
+    // Join axioms into newline-separated strings for transport
+    std::string joined_a, joined_b;
+    for (auto const & ax : axioms_a) {
+        if (!joined_a.empty()) joined_a += "\n";
+        joined_a += ax;
+    }
+    for (auto const & ax : axioms_b) {
+        if (!joined_b.empty()) joined_b += "\n";
+        joined_b += ax;
+    }
+    uint8_t result = g_smt_callback(joined_a, joined_b, id_a, id_b);
+    switch (result) {
+    case 1: {
+        // Conflict detected
+        conflict_witness w;
+        w.m_proposition = "SMT solver found axiom sets unsatisfiable";
+        w.m_kind = conflict_kind::direct;
+        w.m_severity = conflict_severity::fundamental;
+        w.m_left = id_a;
+        w.m_right = id_b;
+        return w;
+    }
+    default:
+        return std::nullopt;  // compatible or inconclusive
+    }
 }
 
 // ── Four-stage compatibility check ──────────────────────────────
@@ -440,10 +629,11 @@ compat_result theory_graph::check_compatibility(
 
     for (auto const & ax_a : mod_a->m_axioms) {
         for (auto const & ax_b : mod_b->m_axioms) {
-            // Pattern 1: direct negation "P" vs "not P" / "not_P"
+            // Pattern 1: direct negation "P" vs "not P" / "not_P" / "¬P"
             bool negation_match =
                 (ax_a == "not " + ax_b) || (ax_b == "not " + ax_a) ||
-                (ax_a == "not_" + ax_b) || (ax_b == "not_" + ax_a);
+                (ax_a == "not_" + ax_b) || (ax_b == "not_" + ax_a) ||
+                (ax_a == "\xC2\xAC" + ax_b) || (ax_b == "\xC2\xAC" + ax_a);
             // Pattern 2: forall/exists conflict
             //   "forall x, P(x)" vs "exists x, not P(x)"
             if (!negation_match) {
@@ -475,8 +665,8 @@ compat_result theory_graph::check_compatibility(
         }
     }
 
-    // Stage 3: Semantic analysis — WHNF normalization + contradiction derivation
-    // Normalize axiom strings to a canonical form and check for semantic conflicts.
+    // Stage 3: Semantic normalization — strip universes, expand aliases,
+    // collapse whitespace, then re-check for contradictions + quantitative/structural conflicts.
     {
         auto semantic_wit = semantic_conflict_check(*mod_a, *mod_b, a, b);
         if (semantic_wit.has_value()) {

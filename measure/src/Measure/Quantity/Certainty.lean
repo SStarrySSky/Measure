@@ -16,7 +16,7 @@ inductive Certainty where
   deriving Inhabited
 
 /-- Error data depends on Certainty. -/
-def ErrorData : Certainty → Type
+@[reducible] def ErrorData : Certainty → Type
   | .exact => Unit
   | .uncertain α => α
 

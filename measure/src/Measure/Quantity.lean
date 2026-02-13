@@ -10,3 +10,12 @@ import Measure.Quantity.Basic
 import Measure.Quantity.Ops
 import Measure.Quantity.MixedOps
 import Measure.Quantity.Audit
+import Measure.Quantity.Bridge
+
+/-! # Quantity Module
+
+Re-exports the full `Measure.Quantity` API: the core `Quantity` type, certainty
+tags, provenance tracking, arithmetic operations (exact and uncertain), mixed-mode
+promotion rules, auditing utilities, and the `Float ↔ ℝ` bridge for interoperation
+with Mathlib-based physics proofs.
+-/

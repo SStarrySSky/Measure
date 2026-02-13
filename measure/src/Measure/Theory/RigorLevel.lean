@@ -20,7 +20,7 @@ inductive RigorLevel where
   | approximate
   | empirical
   | numerical
-  deriving Inhabited, BEq, Repr
+  deriving Inhabited, BEq, Repr, DecidableEq
 
 namespace RigorLevel
 
@@ -51,5 +51,27 @@ def toString : RigorLevel -> String
 
 instance : ToString RigorLevel where
   toString := RigorLevel.toString
+
+def fromString : String → Option RigorLevel
+  | "strict"      => some .strict
+  | "approximate" => some .approximate
+  | "empirical"   => some .empirical
+  | "numerical"   => some .numerical
+  | _             => none
+
+/-- Convert to UInt8 matching C++ `rigor_level` enum encoding:
+    strict=0, approximate=1, empirical=2, numerical=3. -/
+def toUInt8 : RigorLevel → UInt8
+  | .strict      => 0
+  | .approximate => 1
+  | .empirical   => 2
+  | .numerical   => 3
+
+/-- Convert from UInt8 matching C++ `rigor_level` enum encoding. -/
+def ofUInt8 : UInt8 → RigorLevel
+  | 0 => .strict
+  | 1 => .approximate
+  | 2 => .empirical
+  | _ => .numerical
 
 end RigorLevel

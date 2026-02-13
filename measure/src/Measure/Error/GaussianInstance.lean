@@ -21,7 +21,8 @@ instance : UncertaintyModel Gaussian where
     { mean := -x.mean
     , sigma := x.sigma
     , derivs := x.derivs.fold (init := (∅ : Derivatives)) fun acc t d =>
-        acc.insert t (-d) }
+        acc.insert t (-d)
+    , warnings := x.warnings }
   applyFunc x _ f f' := Gaussian.applyUnary x f f'
   centralValue x := x.mean
   uncertainty x := x.sigma
@@ -31,6 +32,7 @@ instance : UncertaintyModel Gaussian where
     { mean := c * x.mean
     , sigma := Float.abs c * x.sigma
     , derivs := x.derivs.fold (init := (∅ : Derivatives)) fun acc t d =>
-        acc.insert t (c * d) }
+        acc.insert t (c * d)
+    , warnings := x.warnings }
 
 end Measure.Error

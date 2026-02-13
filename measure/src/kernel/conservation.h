@@ -11,6 +11,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 #include <optional>
 #include <functional>
 #include <cmath>
+#include <numeric>
+#include <cstdint>
 
 namespace lean {
 
@@ -136,12 +138,82 @@ struct atomic_mutation {
 
 // ── Dimension tag for Pass 3b ───────────────────────────────────
 
+/// Rational exponent matching Lean's QExp (num/den, den >= 1).
+/// Normalized after every operation to prevent denominator overflow.
+struct qexp {
+    int num = 0;
+    unsigned den = 1;
+
+    constexpr qexp() = default;
+    constexpr qexp(int n) : num(n), den(1) {}
+    constexpr qexp(int n, unsigned d) : num(n), den(d > 0 ? d : 1) { normalize(); }
+
+    bool is_zero() const { return num == 0; }
+
+    bool operator==(qexp const & o) const {
+        // Cross-multiply to avoid floating point: a/b == c/d iff a*d == c*b
+        return static_cast<int64_t>(num) * o.den
+            == static_cast<int64_t>(o.num) * den;
+    }
+    bool operator!=(qexp const & o) const { return !(*this == o); }
+
+    qexp operator+(qexp const & o) const {
+        int64_t n = static_cast<int64_t>(num) * o.den
+                  + static_cast<int64_t>(o.num) * den;
+        uint64_t d = static_cast<uint64_t>(den) * o.den;
+        return make_normalized(n, d);
+    }
+    qexp operator-(qexp const & o) const {
+        int64_t n = static_cast<int64_t>(num) * o.den
+                  - static_cast<int64_t>(o.num) * den;
+        uint64_t d = static_cast<uint64_t>(den) * o.den;
+        return make_normalized(n, d);
+    }
+    qexp operator*(int n) const {
+        return make_normalized(static_cast<int64_t>(num) * n, den);
+    }
+    qexp operator-() const { return qexp(-num, den); }
+
+    std::string to_string() const;
+
+private:
+    /// Reduce num/den by their GCD so denominators stay small.
+    constexpr void normalize() {
+        if (num == 0) { den = 1; return; }
+        unsigned g = gcd_unsigned(abs_val(num), den);
+        num /= static_cast<int>(g);
+        den /= g;
+    }
+
+    static constexpr unsigned abs_val(int x) {
+        return x < 0 ? static_cast<unsigned>(-x) : static_cast<unsigned>(x);
+    }
+
+    static constexpr unsigned gcd_unsigned(unsigned a, unsigned b) {
+        while (b != 0) { unsigned t = b; b = a % b; a = t; }
+        return a;
+    }
+
+    /// Build a qexp from wide intermediates, normalizing back to int/unsigned.
+    static qexp make_normalized(int64_t n, uint64_t d) {
+        if (n == 0) return qexp(0, 1);
+        uint64_t an = n < 0 ? static_cast<uint64_t>(-n) : static_cast<uint64_t>(n);
+        uint64_t g = 1;
+        { uint64_t a = an, b = d;
+          while (b != 0) { uint64_t t = b; b = a % b; a = t; }
+          g = a;
+        }
+        return qexp(static_cast<int>(n / static_cast<int64_t>(g)),
+                     static_cast<unsigned>(d / g));
+    }
+};
+
 struct dim_tag {
-    int L = 0, M = 0, T = 0, I = 0, Theta = 0, N = 0, J = 0;
+    qexp L, M, T, I, Theta, N, J;
 
     bool is_zero() const {
-        return L == 0 && M == 0 && T == 0 && I == 0
-            && Theta == 0 && N == 0 && J == 0;
+        return L.is_zero() && M.is_zero() && T.is_zero() && I.is_zero()
+            && Theta.is_zero() && N.is_zero() && J.is_zero();
     }
     bool operator==(dim_tag const & o) const {
         return L == o.L && M == o.M && T == o.T && I == o.I
@@ -159,6 +231,11 @@ struct dim_tag {
 std::optional<bool> delegate_to_cas(
     std::string const & symbolic_expr,
     conservation_law const & law);
+
+/// Register a CAS callback from Lean side.
+/// Callback signature: (symbolic_expr, law_name) -> 0=inconclusive, 1=true, 2=false
+void register_cas_callback(
+    std::function<uint8_t(std::string const &, std::string const &)> cb);
 
 // ── Delta result (Pass 2 output) ─────────────────────────────────
 

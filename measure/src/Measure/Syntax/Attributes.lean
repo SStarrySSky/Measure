@@ -12,46 +12,15 @@ Provides:
 - @[rigor], @[uncertainty], @[conservation] attribute handlers
 -/
 import Lean
+import Measure.Theory.RigorLevel
 
 namespace Measure.Syntax
 
 open Lean
 
-/-- Rigor levels for the rigor spectrum. -/
-inductive RigorLevel where
-  | strict
-  | approximate
-  | empirical
-  | numerical
-  deriving DecidableEq, Repr, Inhabited, BEq
-
-namespace RigorLevel
-
-def fromString : String → Option RigorLevel
-  | "strict"      => some .strict
-  | "approximate" => some .approximate
-  | "empirical"   => some .empirical
-  | "numerical"   => some .numerical
-  | _             => none
-
-def toString : RigorLevel → String
-  | .strict      => "strict"
-  | .approximate => "approximate"
-  | .empirical   => "empirical"
-  | .numerical   => "numerical"
-
-/-- Lattice ordering: strict > approximate > empirical > numerical. -/
-def toNat : RigorLevel → Nat
-  | .strict      => 3
-  | .approximate => 2
-  | .empirical   => 1
-  | .numerical   => 0
-
-/-- Min rule for rigor propagation (lattice homomorphism). -/
-def min (a b : RigorLevel) : RigorLevel :=
-  if a.toNat ≤ b.toNat then a else b
-
-end RigorLevel
+/-- Rigor levels for the rigor spectrum.
+    Re-exported from `Measure.Theory.RigorLevel` to avoid duplicate definitions. -/
+abbrev RigorLevel := Measure.Theory.RigorLevel
 
 /-- Uncertainty model selection. -/
 inductive UncertaintyModelId where

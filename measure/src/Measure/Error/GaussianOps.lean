@@ -17,7 +17,8 @@ def add (x y : Gaussian) : Gaussian :=
   let sumSq := newDerivs.fold (init := 0.0) fun acc _ d => acc + d * d
   { mean := x.mean + y.mean
   , sigma := Float.sqrt sumSq
-  , derivs := newDerivs }
+  , derivs := newDerivs
+  , warnings := x.warnings ++ y.warnings }
 
 /-- f = x - y: derivatives subtract. x - x => sigma = 0 (correct). -/
 def sub (x y : Gaussian) : Gaussian :=
@@ -25,7 +26,8 @@ def sub (x y : Gaussian) : Gaussian :=
   let sumSq := newDerivs.fold (init := 0.0) fun acc _ d => acc + d * d
   { mean := x.mean - y.mean
   , sigma := Float.sqrt sumSq
-  , derivs := newDerivs }
+  , derivs := newDerivs
+  , warnings := x.warnings ++ y.warnings }
 
 /-- f = x * y: first-order product rule. -/
 def mul (x y : Gaussian) : Gaussian :=
@@ -33,9 +35,12 @@ def mul (x y : Gaussian) : Gaussian :=
     (fun dx dy => y.mean * dx + x.mean * dy)
     x.derivs y.derivs
   let sumSq := newDerivs.fold (init := 0.0) fun acc _ d => acc + d * d
-  { mean := x.mean * y.mean
-  , sigma := Float.sqrt sumSq
-  , derivs := newDerivs }
+  let result : Gaussian :=
+    { mean := x.mean * y.mean
+    , sigma := Float.sqrt sumSq
+    , derivs := newDerivs
+    , warnings := x.warnings ++ y.warnings }
+  checkLargeUncertainty result
 
 /-- f = x / y: first-order quotient rule. -/
 def div (x y : Gaussian) : Gaussian :=
@@ -45,9 +50,12 @@ def div (x y : Gaussian) : Gaussian :=
     (fun dx dy => dx * yInv - x.mean * yInvSq * dy)
     x.derivs y.derivs
   let sumSq := newDerivs.fold (init := 0.0) fun acc _ d => acc + d * d
-  { mean := x.mean / y.mean
-  , sigma := Float.sqrt sumSq
-  , derivs := newDerivs }
+  let result : Gaussian :=
+    { mean := x.mean / y.mean
+    , sigma := Float.sqrt sumSq
+    , derivs := newDerivs
+    , warnings := x.warnings ++ y.warnings }
+  checkLargeUncertainty result
 
 /-- f = x^n: power rule. -/
 def pow (x : Gaussian) (n : Float) : Gaussian :=
@@ -55,9 +63,12 @@ def pow (x : Gaussian) (n : Float) : Gaussian :=
   let newDerivs := x.derivs.fold (init := (∅ : Derivatives)) fun acc tag d =>
     acc.insert tag (coeff * d)
   let sumSq := newDerivs.fold (init := 0.0) fun acc _ d => acc + d * d
-  { mean := Float.pow x.mean n
-  , sigma := Float.sqrt sumSq
-  , derivs := newDerivs }
+  let result : Gaussian :=
+    { mean := Float.pow x.mean n
+    , sigma := Float.sqrt sumSq
+    , derivs := newDerivs
+    , warnings := x.warnings }
+  checkLargeUncertainty result
 
 /-- Apply unary function via chain rule: f'(x.mean) * dx/dzi. -/
 def applyUnary (x : Gaussian) (f f' : Float → Float) : Gaussian :=
@@ -65,8 +76,11 @@ def applyUnary (x : Gaussian) (f f' : Float → Float) : Gaussian :=
   let newDerivs := x.derivs.fold (init := (∅ : Derivatives)) fun acc tag d =>
     acc.insert tag (coeff * d)
   let sumSq := newDerivs.fold (init := 0.0) fun acc _ d => acc + d * d
-  { mean := f x.mean
-  , sigma := Float.sqrt sumSq
-  , derivs := newDerivs }
+  let result : Gaussian :=
+    { mean := f x.mean
+    , sigma := Float.sqrt sumSq
+    , derivs := newDerivs
+    , warnings := x.warnings }
+  checkLargeUncertainty result
 
 end Gaussian

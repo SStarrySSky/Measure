@@ -6,5 +6,6 @@ Barrel file for Measure.Conservation module.
 -/
 import Measure.Conservation.Law
 import Measure.Conservation.Noether
+import Measure.Conservation.CASBridge
 import Measure.Conservation.StaticChecker
 import Measure.Conservation.Runtime

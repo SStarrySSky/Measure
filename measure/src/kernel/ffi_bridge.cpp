@@ -89,6 +89,10 @@ inline void lean_dec(lean_object *) {}
 inline void lean_inc_ref(lean_object *) {}
 inline void lean_dec_ref(lean_object *) {}
 
+// Closure application (no-ops in standalone mode)
+inline lean_object * lean_apply_2(lean_object *, lean_object *, lean_object *) { return lean_box(0); }
+inline lean_object * lean_apply_4(lean_object *, lean_object *, lean_object *, lean_object *, lean_object *) { return lean_box(0); }
+
 // Provide empty namespace lean so `using namespace lean;` compiles
 namespace lean {}
 #endif
@@ -264,6 +268,27 @@ static lean_external_class * get_approx_class() {
 
 static approx_eq_checker & to_approx(b_lean_obj_arg o) {
     return *static_cast<approx_eq_checker *>(lean_get_external_data(o));
+}
+
+// ============================================================
+// External class: epsilon_tracker
+// ============================================================
+
+static void eps_tracker_finalizer(void * ptr) {
+    delete static_cast<epsilon_tracker *>(ptr);
+}
+static void eps_tracker_foreach(void *, b_lean_obj_arg) {}
+static lean_external_class * g_eps_tracker_class = nullptr;
+
+static lean_external_class * get_eps_tracker_class() {
+    if (!g_eps_tracker_class)
+        g_eps_tracker_class = lean_register_external_class(
+            eps_tracker_finalizer, eps_tracker_foreach);
+    return g_eps_tracker_class;
+}
+
+static epsilon_tracker & to_eps_tracker(b_lean_obj_arg o) {
+    return *static_cast<epsilon_tracker *>(lean_get_external_data(o));
 }
 
 // ============================================================
@@ -572,6 +597,108 @@ lean_measure_approx_eq_reset(b_lean_obj_arg c) {
 }
 
 // ============================================================
+// extern "C" — epsilon_tracker functions (15)
+// ============================================================
+
+extern "C" LEAN_EXPORT lean_obj_res
+lean_measure_epsilon_tracker_new(lean_obj_arg /* unit */) {
+    auto * t = new epsilon_tracker();
+    return lean_alloc_external(get_eps_tracker_class(), t);
+}
+
+extern "C" LEAN_EXPORT lean_obj_res
+lean_measure_epsilon_tracker_reset(b_lean_obj_arg t) {
+    to_eps_tracker(t).reset();
+    return lean_box(0);
+}
+
+extern "C" LEAN_EXPORT lean_obj_res
+lean_measure_epsilon_tracker_set_overflow_threshold(
+    b_lean_obj_arg t, b_lean_obj_arg threshold)
+{
+    to_eps_tracker(t).set_overflow_threshold(to_epsilon_val(threshold));
+    return lean_box(0);
+}
+
+extern "C" LEAN_EXPORT uint64_t
+lean_measure_epsilon_tracker_mk_literal(
+    b_lean_obj_arg t, b_lean_obj_arg eps, b_lean_obj_arg hint)
+{
+    return to_eps_tracker(t).mk_literal(
+        to_epsilon_val(eps), lean_string_to_std(hint));
+}
+
+extern "C" LEAN_EXPORT uint64_t
+lean_measure_epsilon_tracker_mk_add(
+    b_lean_obj_arg t, uint64_t left, uint64_t right, b_lean_obj_arg hint)
+{
+    return to_eps_tracker(t).mk_add(left, right, lean_string_to_std(hint));
+}
+
+extern "C" LEAN_EXPORT uint64_t
+lean_measure_epsilon_tracker_mk_mul(
+    b_lean_obj_arg t, uint64_t left, uint64_t right,
+    b_lean_obj_arg val_a_abs, b_lean_obj_arg val_b_abs, b_lean_obj_arg hint)
+{
+    return to_eps_tracker(t).mk_mul(
+        left, right,
+        to_epsilon_val(val_a_abs), to_epsilon_val(val_b_abs),
+        lean_string_to_std(hint));
+}
+
+extern "C" LEAN_EXPORT uint64_t
+lean_measure_epsilon_tracker_mk_max(
+    b_lean_obj_arg t, uint64_t left, uint64_t right, b_lean_obj_arg hint)
+{
+    return to_eps_tracker(t).mk_max(left, right, lean_string_to_std(hint));
+}
+
+extern "C" LEAN_EXPORT uint64_t
+lean_measure_epsilon_tracker_mk_trans(
+    b_lean_obj_arg t, uint64_t left, uint64_t right, b_lean_obj_arg hint)
+{
+    return to_eps_tracker(t).mk_trans(left, right, lean_string_to_std(hint));
+}
+
+extern "C" LEAN_EXPORT uint64_t
+lean_measure_epsilon_tracker_mk_subst(
+    b_lean_obj_arg t, uint64_t child, b_lean_obj_arg scale, b_lean_obj_arg hint)
+{
+    return to_eps_tracker(t).mk_subst(
+        child, to_epsilon_val(scale), lean_string_to_std(hint));
+}
+
+extern "C" LEAN_EXPORT lean_obj_res
+lean_measure_epsilon_tracker_get_epsilon(b_lean_obj_arg t, uint64_t id) {
+    return mk_epsilon_val_obj(to_eps_tracker(t).get_epsilon(id));
+}
+
+extern "C" LEAN_EXPORT uint8_t
+lean_measure_epsilon_tracker_has_overflow(b_lean_obj_arg t) {
+    return to_eps_tracker(t).has_overflow() ? 1 : 0;
+}
+
+extern "C" LEAN_EXPORT uint64_t
+lean_measure_epsilon_tracker_overflow_count(b_lean_obj_arg t) {
+    return to_eps_tracker(t).overflow_count();
+}
+
+extern "C" LEAN_EXPORT lean_obj_res
+lean_measure_epsilon_tracker_render_tree(b_lean_obj_arg t, uint64_t id) {
+    return std_string_to_lean(to_eps_tracker(t).render_tree(id));
+}
+
+extern "C" LEAN_EXPORT lean_obj_res
+lean_measure_epsilon_tracker_render_overflow_report(b_lean_obj_arg t) {
+    return std_string_to_lean(to_eps_tracker(t).render_overflow_report());
+}
+
+extern "C" LEAN_EXPORT uint64_t
+lean_measure_epsilon_tracker_size(b_lean_obj_arg t) {
+    return static_cast<uint64_t>(to_eps_tracker(t).size());
+}
+
+// ============================================================
 // extern "C" — rigor propagation functions
 // ============================================================
 
@@ -593,4 +720,68 @@ extern "C" LEAN_EXPORT lean_obj_res
 lean_measure_rigor_to_string(uint8_t r) {
     return std_string_to_lean(
         rigor_to_string(static_cast<rigor_level>(r)));
+}
+
+// ============================================================
+// extern "C" — CAS delegation callback registration
+// ============================================================
+
+/// Lean-side CAS callback closure (stored globally).
+/// The Lean closure takes (symbolic_expr : String, law_name : String) -> UInt8
+static lean_object * g_lean_cas_closure = nullptr;
+
+extern "C" LEAN_EXPORT lean_obj_res
+lean_measure_register_cas_callback(lean_obj_arg closure, lean_obj_arg /* w */) {
+    if (g_lean_cas_closure) {
+        lean_dec(g_lean_cas_closure);
+    }
+    g_lean_cas_closure = closure;
+    lean_inc(g_lean_cas_closure);
+
+    register_cas_callback([](std::string const & expr, std::string const & law) -> uint8_t {
+        if (!g_lean_cas_closure) return 0;
+        lean_inc(g_lean_cas_closure);
+        lean_object * expr_obj = std_string_to_lean(expr);
+        lean_object * law_obj = std_string_to_lean(law);
+        // Apply closure: closure expr law world -> (UInt8 × world)
+        lean_object * r1 = lean_apply_2(g_lean_cas_closure, expr_obj, law_obj);
+        // Result is UInt8 (unboxed)
+        uint8_t result = lean_unbox(r1);
+        lean_dec(r1);
+        return result;
+    });
+
+    return lean_io_result_mk_ok(lean_box(0));
+}
+
+// ============================================================
+// extern "C" — SMT delegation callback registration
+// ============================================================
+
+/// Lean-side SMT callback closure (stored globally).
+static lean_object * g_lean_smt_closure = nullptr;
+
+extern "C" LEAN_EXPORT lean_obj_res
+lean_measure_register_smt_callback(lean_obj_arg closure, lean_obj_arg /* w */) {
+    if (g_lean_smt_closure) {
+        lean_dec(g_lean_smt_closure);
+    }
+    g_lean_smt_closure = closure;
+    lean_inc(g_lean_smt_closure);
+
+    register_smt_callback([](std::string const & axioms_a, std::string const & axioms_b,
+                              theory_id id_a, theory_id id_b) -> uint8_t {
+        if (!g_lean_smt_closure) return 2;  // inconclusive
+        lean_inc(g_lean_smt_closure);
+        lean_object * a_obj = std_string_to_lean(axioms_a);
+        lean_object * b_obj = std_string_to_lean(axioms_b);
+        lean_object * ida_obj = lean_box(static_cast<size_t>(id_a));
+        lean_object * idb_obj = lean_box(static_cast<size_t>(id_b));
+        lean_object * r1 = lean_apply_4(g_lean_smt_closure, a_obj, b_obj, ida_obj, idb_obj);
+        uint8_t result = lean_unbox(r1);
+        lean_dec(r1);
+        return result;
+    });
+
+    return lean_io_result_mk_ok(lean_box(0));
 }

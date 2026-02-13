@@ -17,6 +17,9 @@ package measure where
   -- linked into the lean/leanc binary. No extra moreLinkArgs needed.
   moreLinkArgs := #[]
 
+require mathlib from git
+  "https://github.com/leanprover-community/mathlib4" @ "master"
+
 @[default_target]
 lean_lib Measure where
   srcDir := "../../src"
@@ -26,3 +29,7 @@ lean_exe «measure-cli» where
   srcDir := "../../src"
   root := `Main
   supportInterpreter := true
+
+lean_lib MeasureTest where
+  srcDir := "../../../test"
+  roots := #[`TestDim, `TestQuantity, `TestConstants, `TestBridge, `TestPhysics, `TestProperties, `TestIntegration, `TestStress]

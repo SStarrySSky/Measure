@@ -5,6 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 FFI declarations for the Measure kernel extension.
 Each @[extern] binding corresponds to a C function in ffi_bridge.cpp.
 -/
+import Measure.Theory.RigorLevel
+
 namespace Measure.Kernel
 
 -- ============================================================
@@ -42,19 +44,17 @@ instance : Nonempty EpsilonTracker := EpsilonTrackerPointed.property
 /-- Theory identifier (maps to C++ `theory_id` = `uint32_t`). -/
 abbrev TheoryId := UInt32
 
-/-- Rigor level spectrum (maps to C++ `rigor_level` enum). -/
-inductive RigorLevel where
-  | strict      -- 0: full formal proof
-  | approximate -- 1: controlled approximation
-  | empirical   -- 2: empirical formula
-  | numerical   -- 3: pure numerical
-  deriving Inhabited, BEq, Repr
+/-- Rigor level spectrum (maps to C++ `rigor_level` enum).
+    Re-exported from Theory.RigorLevel as the single source of truth.
+    C++ encoding: strict=0, approximate=1, empirical=2, numerical=3. -/
+abbrev RigorLevel := Measure.Theory.RigorLevel
 
-def RigorLevel.toUInt8 : RigorLevel → UInt8
-  | .strict => 0 | .approximate => 1 | .empirical => 2 | .numerical => 3
+namespace RigorLevel
 
-def RigorLevel.ofUInt8 : UInt8 → RigorLevel
-  | 0 => .strict | 1 => .approximate | 2 => .empirical | _ => .numerical
+def toUInt8 (r : RigorLevel) : UInt8 := Measure.Theory.RigorLevel.toUInt8 r
+def ofUInt8 (v : UInt8) : RigorLevel := Measure.Theory.RigorLevel.ofUInt8 v
+
+end RigorLevel
 
 -- ============================================================
 -- EpsilonVal FFI (13 functions)
@@ -265,5 +265,21 @@ opaque Rigor.isCompatibleRaw : UInt8 → UInt8 → Bool
 
 @[extern "lean_measure_rigor_to_string"]
 opaque Rigor.toStringRaw : UInt8 → String
+
+-- ============================================================
+-- CAS / SMT delegation callback registration (2 functions)
+-- ============================================================
+
+/-- Register a CAS callback for conservation checking.
+    The callback takes (symbolicExpr : String) (lawName : String) and returns:
+    0 = inconclusive, 1 = verified (delta = 0), 2 = refuted (delta ≠ 0). -/
+@[extern "lean_measure_register_cas_callback"]
+opaque registerCASCallback : (String → String → UInt8) → IO Unit
+
+/-- Register an SMT callback for theory compatibility checking.
+    The callback takes (axiomsA : String) (axiomsB : String) (idA : UInt32) (idB : UInt32)
+    and returns: 0 = compatible, 1 = conflict, 2 = inconclusive. -/
+@[extern "lean_measure_register_smt_callback"]
+opaque registerSMTCallback : (String → String → UInt32 → UInt32 → UInt8) → IO Unit
 
 end Measure.Kernel

@@ -28,18 +28,21 @@ def mergeTerms (f : Float → Float → Float)
 /-- z = x + y (exact, no new noise symbol). -/
 def add (x y : Affine) : Affine :=
   { center := x.center + y.center
-  , terms := mergeTerms (· + ·) x.terms y.terms }
+  , terms := mergeTerms (· + ·) x.terms y.terms
+  , nextId := mergeNextId x y }
 
 /-- z = x - y (exact). x - x => all terms cancel => radius = 0. -/
 def sub (x y : Affine) : Affine :=
   { center := x.center - y.center
-  , terms := mergeTerms (· - ·) x.terms y.terms }
+  , terms := mergeTerms (· - ·) x.terms y.terms
+  , nextId := mergeNextId x y }
 
 /-- Scalar multiply: z = c * x. -/
 def scale (c : Float) (x : Affine) : Affine :=
   { center := c * x.center
   , terms := x.terms.fold (init := (∅ : Std.HashMap NoiseId Float)) fun acc nid coeff =>
-      acc.insert nid (c * coeff) }
+      acc.insert nid (c * coeff)
+  , nextId := x.nextId }
 
 /-- Constant shift: z = x + c. -/
 def shift (x : Affine) (c : Float) : Affine :=

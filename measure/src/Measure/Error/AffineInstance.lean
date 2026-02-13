@@ -16,7 +16,7 @@ namespace Affine
 def applyNonlinear (x : Affine) (f _f' : Float → Float) : Affine :=
   let (a, b) := x.toInterval
   if b - a < 1e-300 then
-    exact (f x.center)
+    { exact (f x.center) with nextId := x.nextId }
   else
     let alpha := (f b - f a) / (b - a)
     let fa := f a
@@ -26,8 +26,8 @@ def applyNonlinear (x : Affine) (f _f' : Float → Float) : Affine :=
     let zetaMid := (fa + fb) / 2.0 - alpha * (a + b) / 2.0
     let delta := Float.abs (fMid - linMid - zetaMid)
     let linear := scale alpha x |>.shift zetaMid
-    let eid := NoiseId.fresh
-    { linear with terms := linear.terms.insert eid delta }
+    let eid : NoiseId := ⟨linear.nextId⟩
+    { linear with terms := linear.terms.insert eid delta, nextId := linear.nextId + 1 }
 
 end Affine
 

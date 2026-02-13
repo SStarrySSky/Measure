@@ -22,15 +22,9 @@ import Measure.Kernel
 import Measure.Theory
 -- Conservation laws
 import Measure.Conservation
--- Scratch mode
-import Measure.Scratch
 -- External computation
 import Measure.External
--- LSP extensions
-import Measure.LSP
--- Package manager
-import Measure.Pkg
--- Documentation generation
-import Measure.Doc
--- REPL
-import Measure.Repl
+-- Mathematics foundation (Mathlib bridge)
+import Measure.Math
+-- Physics formalization
+import Measure.Physics

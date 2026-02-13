@@ -108,6 +108,14 @@ struct theory_pair_hash {
 using theory_pair_set = std::unordered_set<
     std::pair<theory_id, theory_id>, theory_pair_hash>;
 
+// ── SMT delegation callback ──────────────────────────────────────
+
+/// Register an SMT callback from Lean side.
+/// Callback signature: (axioms_a, axioms_b, id_a, id_b) -> 0=compatible, 1=conflict, 2=inconclusive
+void register_smt_callback(
+    std::function<uint8_t(std::string const &, std::string const &,
+                           theory_id, theory_id)> cb);
+
 // ── Theory Graph ─────────────────────────────────────────────────
 
 class theory_graph {

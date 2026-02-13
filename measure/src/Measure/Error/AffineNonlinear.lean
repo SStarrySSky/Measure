@@ -32,18 +32,19 @@ def mul (x y : Affine) : Affine :=
     (fun cx cy => y.center * cx + x.center * cy)
     x.terms y.terms
   let delta := x.radius * y.radius
-  let eid := NoiseId.fresh
+  let nid := mergeNextId x y
+  let eid : NoiseId := ⟨nid⟩
   let allTerms := if delta > 1e-300
     then linearTerms.insert eid delta
     else linearTerms
-  { center := x.center * y.center, terms := allTerms }
+  { center := x.center * y.center, terms := allTerms, nextId := nid + 1 }
 
 /-- Reciprocal via Chebyshev approximation on [a, b].
     Requires 0 not in [a, b]. -/
 def reciprocal (y : Affine) : Affine :=
   let (a, b) := y.toInterval
   if a ≤ 0.0 && 0.0 ≤ b then
-    { center := (1.0 / 0.0), terms := ∅ }
+    { center := (1.0 / 0.0), terms := ∅, nextId := y.nextId }
   else
     let alpha := -1.0 / (a * b)
     let mid := 0.5 * (1.0 / a + 1.0 / b)
@@ -53,8 +54,8 @@ def reciprocal (y : Affine) : Affine :=
                    else -Float.sqrt (a * b)
     let delta := Float.abs (1.0 / geoMean - (alpha * geoMean + zeta))
     let linear := scale alpha y |>.shift zeta
-    let eid := NoiseId.fresh
-    { linear with terms := linear.terms.insert eid delta }
+    let eid : NoiseId := ⟨linear.nextId⟩
+    { linear with terms := linear.terms.insert eid delta, nextId := linear.nextId + 1 }
 
 /-- Division: x / y = x * (1/y). -/
 def div (x y : Affine) : Affine :=

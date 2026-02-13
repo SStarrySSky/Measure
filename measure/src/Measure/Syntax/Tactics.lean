@@ -21,6 +21,7 @@ import Measure.Quantity.Ops
 import Measure.Kernel.FFI
 import Measure.Kernel.Wrappers
 import Measure.Kernel.Elab
+import Measure.Conservation.CASBridge
 
 /-! ## Trust Boundary Axioms
 
@@ -31,18 +32,41 @@ we fall back to these axioms instead of `sorry`.
 Unlike `sorry` (which silently makes any proposition provable), these axioms:
 - Are searchable: `#check @Measure.TrustBoundary.ffiInconclusive`
 - Are auditable: each use is logged with `logWarning`
-- Are typed: they only apply to specific scenarios, not arbitrary propositions
+- Are type-restricted: they only apply to propositions tagged with the appropriate
+  typeclass (`FFIVerifiable` or `EpsilonBounded`), not arbitrary `Prop`
+- Are construction-restricted: the typeclasses require a private opaque `TrustToken`
+  that only the tactic elaborators in this file can produce
 
 To find all trust boundary uses: `grep "TrustBoundary" src/`
 -/
 
+/-- Private inductive token type that guards trust boundary typeclass construction.
+    Since the inductive and its constructor `mk` are both private, external code
+    cannot create instances of `FFIVerifiable` or `EpsilonBounded`. -/
+private inductive Measure.TrustBoundary.TrustToken where
+  | mk
+
+/-- Typeclass marking propositions that have been submitted to the C++ conservation
+    checker. Only propositions carrying this instance can use `ffiInconclusive`.
+    Requires a `TrustToken` that only tactic elaborators can construct. -/
+class Measure.TrustBoundary.FFIVerifiable (P : Prop) where
+  token : Measure.TrustBoundary.TrustToken
+
+/-- Typeclass marking propositions involving approximate equality within epsilon
+    bounds. Only propositions carrying this instance can use `epsilonOverflow`.
+    Requires a `TrustToken` that only tactic elaborators can construct. -/
+class Measure.TrustBoundary.EpsilonBounded (P : Prop) where
+  token : Measure.TrustBoundary.TrustToken
+
 /-- Trust boundary: the C++ conservation checker returned "inconclusive"
-    but did not return "violated". We trust the external engine's non-rejection. -/
-axiom Measure.TrustBoundary.ffiInconclusive (goal : Prop) : goal
+    but did not return "violated". We trust the external engine's non-rejection.
+    Restricted to propositions tagged with `FFIVerifiable`. -/
+axiom Measure.TrustBoundary.ffiInconclusive (P : Prop) [Measure.TrustBoundary.FFIVerifiable P] : P
 
 /-- Trust boundary: the epsilon tracker overflowed during approximate computation.
-    The approximation may still be valid, but we cannot bound the error. -/
-axiom Measure.TrustBoundary.epsilonOverflow (goal : Prop) : goal
+    The approximation may still be valid, but we cannot bound the error.
+    Restricted to propositions tagged with `EpsilonBounded`. -/
+axiom Measure.TrustBoundary.epsilonOverflow (P : Prop) [Measure.TrustBoundary.EpsilonBounded P] : P
 
 namespace Measure.Syntax.Tactic
 
@@ -225,6 +249,48 @@ private def tryStandardClosers : TacticM Bool := do
   return false
 
 -- ============================================================
+-- Trust boundary helpers: construct restricted axiom proofs at Expr level
+-- ============================================================
+
+/-- Close the current goal using `Measure.TrustBoundary.ffiInconclusive`.
+    Constructs an `FFIVerifiable` instance for the goal type and applies the axiom.
+    This is done at the `Expr` level to avoid fragile syntax round-tripping.
+    Uses the private `mkTrustToken` to construct the instance — external code
+    cannot replicate this because `mkTrustToken` is not exported. -/
+private def applyFFIInconclusive (goal : MVarId) : TacticM Unit := do
+  let goalTy ← goal.getType
+  let goalTy ← instantiateMVars goalTy
+  -- Build the FFIVerifiable instance using the private TrustToken.mk
+  let tokenVal := mkConst ``Measure.TrustBoundary.TrustToken.mk
+  let inst := mkApp (mkConst ``Measure.TrustBoundary.FFIVerifiable.mk) tokenVal
+  -- Synthesize or provide the instance in the local context
+  let instTy := mkApp (mkConst ``Measure.TrustBoundary.FFIVerifiable) goalTy
+  let instMVar ← mkFreshExprMVar instTy
+  instMVar.mvarId!.assign inst
+  -- Build the axiom application: ffiInconclusive goalTy inst
+  let proof := mkApp2 (mkConst ``Measure.TrustBoundary.ffiInconclusive) goalTy instMVar
+  goal.assign proof
+
+/-- Close the current goal using `Measure.TrustBoundary.epsilonOverflow`.
+    Constructs an `EpsilonBounded` instance for the goal type and applies the axiom.
+    This is done at the `Expr` level to avoid fragile syntax round-tripping.
+    Uses the private `mkTrustToken` to construct the instance — external code
+    cannot replicate this because `mkTrustToken` is not exported. -/
+private def applyEpsilonOverflow (goal : MVarId) : TacticM Unit := do
+  let goalTy ← goal.getType
+  let goalTy ← instantiateMVars goalTy
+  -- Build the EpsilonBounded instance using the private TrustToken.mk
+  let tokenVal := mkConst ``Measure.TrustBoundary.TrustToken.mk
+  let inst := mkApp (mkConst ``Measure.TrustBoundary.EpsilonBounded.mk) tokenVal
+  -- Synthesize or provide the instance in the local context
+  let instTy := mkApp (mkConst ``Measure.TrustBoundary.EpsilonBounded) goalTy
+  let instMVar ← mkFreshExprMVar instTy
+  instMVar.mvarId!.assign inst
+  -- Build the axiom application: epsilonOverflow goalTy inst
+  let proof := mkApp2 (mkConst ``Measure.TrustBoundary.epsilonOverflow) goalTy instMVar
+  goal.assign proof
+
+-- ============================================================
 -- Tactic elaboration: real logic
 -- ============================================================
 
@@ -380,11 +446,21 @@ def evalConserve : Tactic := fun stx => do
     if ← tryStandardClosers then return
     try
       evalTactic (← `(tactic| simp [*] <;> decide))
+      logInfo "[conserve] Closed by simp+decide"
       return
-    catch _ => pure ()
-    logWarning "[conserve] TRUST BOUNDARY: C++ engine inconclusive; using axiom ffiInconclusive"
-    let goalTy ← (← getMainGoal).getType
-    evalTactic (← `(tactic| exact Measure.TrustBoundary.ffiInconclusive _))
+    catch _ =>
+      -- Try external CAS (Julia/Mathematica/Python) before trust boundary
+      let casGoalStr := toString (← ppExpr (← (← getMainGoal).getType))
+      let casResult ← liftM (m := IO) (Measure.Conservation.delegateToCAS casGoalStr)
+      match casResult with
+      | some true =>
+        logInfo "[conserve] External CAS verified conservation"
+        if ← tryStandardClosers then return
+      | some false =>
+        throwError "[conserve] External CAS determined conservation is violated"
+      | none => pure ()
+      logWarning "[conserve] TRUST BOUNDARY: C++ engine inconclusive; using axiom ffiInconclusive"
+      applyFFIInconclusive (← getMainGoal)
 
 /-- approximate neglect: drop small terms from the goal.
     Uses FFI ApproxEqChecker to get error bounds, then constructs
@@ -446,7 +522,7 @@ def evalApproxNeglect : Tactic := fun stx => do
   -- Only use axiom epsilonOverflow if the checker was inconclusive
   if checker.hasOverflow then
     logWarning "[approximate neglect] TRUST BOUNDARY: epsilon overflow; using axiom epsilonOverflow"
-    evalTactic (← `(tactic| exact Measure.TrustBoundary.epsilonOverflow _))
+    applyEpsilonOverflow (← getMainGoal)
   else
     throwError "[approximate neglect] Could not construct proof after neglecting {varNames}"
 
@@ -493,7 +569,7 @@ def evalApproxTaylor : Tactic := fun stx => do
   -- Only use axiom epsilonOverflow if checker reports overflow (genuinely inconclusive)
   if checker.hasOverflow then
     logWarning "[approximate taylor] TRUST BOUNDARY: epsilon overflow; using axiom epsilonOverflow"
-    evalTactic (← `(tactic| exact Measure.TrustBoundary.epsilonOverflow _))
+    applyEpsilonOverflow (← getMainGoal)
   else
     throwError "[approximate taylor] Could not complete Taylor expansion of {varName}"
 
@@ -613,7 +689,7 @@ def evalLimitOf : Tactic := fun stx => do
   -- Only use axiom epsilonOverflow on genuine inconclusive (overflow)
   if checker.hasOverflow then
     logWarning "[limit_of] TRUST BOUNDARY: epsilon overflow; using axiom epsilonOverflow"
-    evalTactic (← `(tactic| exact Measure.TrustBoundary.epsilonOverflow _))
+    applyEpsilonOverflow (← getMainGoal)
   else
     throwError "[limit_of] Could not close goal after taking limit {varName} -> {target}"
 
@@ -663,7 +739,7 @@ def evalLimitOfMuchLess : Tactic := fun stx => do
   -- Only use axiom epsilonOverflow on genuine inconclusive
   if checker.hasOverflow then
     logWarning "[limit_of] TRUST BOUNDARY: epsilon overflow; using axiom epsilonOverflow"
-    evalTactic (← `(tactic| exact Measure.TrustBoundary.epsilonOverflow _))
+    applyEpsilonOverflow (← getMainGoal)
   else
     throwError "[limit_of] Could not close goal after taking limit {var1Name} << {var2Name}"
 

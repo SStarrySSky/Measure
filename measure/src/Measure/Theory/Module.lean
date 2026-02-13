@@ -80,22 +80,14 @@ namespace TheoryModule
     Used for environment extension registration. -/
 def toTheoryInfo (tm : TheoryModule) : Measure.Syntax.TheoryInfo where
   name := .mkSimple tm.name
-  rigorLevel := match tm.rigorLevel with
-    | .strict      => .strict
-    | .approximate => .approximate
-    | .empirical   => .empirical
-    | .numerical   => .numerical
+  rigorLevel := tm.rigorLevel
   extends_ := tm.imports.map .mkSimple
 
 /-- Create a TheoryModule from a TheoryInfo (minimal skeleton).
     Populates name, rigor, and imports; other fields default. -/
 def fromTheoryInfo (info : Measure.Syntax.TheoryInfo) : TheoryModule where
   name := info.name.toString
-  rigorLevel := match info.rigorLevel with
-    | .strict      => .strict
-    | .approximate => .approximate
-    | .empirical   => .empirical
-    | .numerical   => .numerical
+  rigorLevel := info.rigorLevel
   imports := info.extends_.map Lean.Name.toString
 
 end TheoryModule

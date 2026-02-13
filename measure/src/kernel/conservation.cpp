@@ -39,13 +39,19 @@ bool expr_pool::references_var(size_t idx,
     return false;
 }
 
-// ── dim_tag formatting ──────────────────────────────────────────
+// ── qexp / dim_tag formatting ────────────────────────────────────
+
+std::string qexp::to_string() const {
+    if (den == 1) return std::to_string(num);
+    return std::to_string(num) + "/" + std::to_string(den);
+}
 
 std::string dim_tag::to_string() const {
     std::ostringstream os;
-    os << "L" << L << ".M" << M << ".T" << T
-       << ".I" << I << ".Th" << Theta
-       << ".N" << N << ".J" << J;
+    os << "L" << L.to_string() << ".M" << M.to_string()
+       << ".T" << T.to_string() << ".I" << I.to_string()
+       << ".Th" << Theta.to_string() << ".N" << N.to_string()
+       << ".J" << J.to_string();
     return os.str();
 }
 
@@ -405,26 +411,26 @@ delta_result conservation_checker::compute_delta(
 
 /// Known dimension tags for common physics variables.
 static std::optional<dim_tag> lookup_var_dim(std::string const & name) {
-    // Velocity-like
+    // Velocity-like: L T^{-1}
     if (name.find("velocity") != std::string::npos || name == "v" || name == "v'")
-        return dim_tag{1, 0, -1, 0, 0, 0, 0};
-    // Mass
+        return dim_tag{qexp(1), qexp(0), qexp(-1), {}, {}, {}, {}};
+    // Mass: M
     if (name.find("mass") != std::string::npos || name == "m")
-        return dim_tag{0, 1, 0, 0, 0, 0, 0};
-    // Position / height
+        return dim_tag{{}, qexp(1), {}, {}, {}, {}, {}};
+    // Position / height: L
     if (name.find("height") != std::string::npos || name == "h" || name == "h'"
         || name.find("position") != std::string::npos || name == "x")
-        return dim_tag{1, 0, 0, 0, 0, 0, 0};
-    // Time step
+        return dim_tag{qexp(1), {}, {}, {}, {}, {}, {}};
+    // Time step: T
     if (name == "dt" || name == "t")
-        return dim_tag{0, 0, 1, 0, 0, 0, 0};
-    // Acceleration / gravity
+        return dim_tag{{}, {}, qexp(1), {}, {}, {}, {}};
+    // Acceleration / gravity: L T^{-2}
     if (name == "g" || name.find("accel") != std::string::npos)
-        return dim_tag{1, 0, -2, 0, 0, 0, 0};
-    // Energy
+        return dim_tag{qexp(1), {}, qexp(-2), {}, {}, {}, {}};
+    // Energy: L^2 M T^{-2}
     if (name.find("energy") != std::string::npos || name.find("kinetic") != std::string::npos
         || name.find("potential") != std::string::npos)
-        return dim_tag{2, 1, -2, 0, 0, 0, 0};
+        return dim_tag{qexp(2), qexp(1), qexp(-2), {}, {}, {}, {}};
     return std::nullopt;
 }
 
@@ -438,7 +444,7 @@ static std::optional<dim_tag> infer_expr_dim(
 
     switch (node.m_kind) {
     case expr_node_kind::literal:
-        return dim_tag{0, 0, 0, 0, 0, 0, 0}; // dimensionless
+        return dim_tag{}; // dimensionless
 
     case expr_node_kind::variable:
         return lookup_var_dim(node.m_name);
@@ -491,11 +497,24 @@ static std::optional<dim_tag> infer_expr_dim(
     }
 
     case expr_node_kind::func_call:
+        // sqrt: dim^(1/2) — propagate fractional exponents
+        if (node.m_name == "sqrt" && !node.m_children.empty()) {
+            auto da = infer_expr_dim(pool, node.m_children[0]);
+            if (!da) return std::nullopt;
+            // If argument is dimensionless, result is dimensionless
+            if (da->is_zero()) return dim_tag{};
+            // Otherwise, halve each exponent: qexp * 1 then adjust den
+            auto half = [](qexp q) -> qexp {
+                return qexp(q.num, q.den * 2);
+            };
+            return dim_tag{half(da->L), half(da->M), half(da->T),
+                           half(da->I), half(da->Theta),
+                           half(da->N), half(da->J)};
+        }
         // Transcendental functions: args must be dimensionless, result dimensionless
         if (node.m_name == "sin" || node.m_name == "cos" ||
-            node.m_name == "exp" || node.m_name == "log" ||
-            node.m_name == "sqrt") {
-            return dim_tag{0, 0, 0, 0, 0, 0, 0};
+            node.m_name == "exp" || node.m_name == "log") {
+            return dim_tag{};
         }
         return std::nullopt;
     }
@@ -561,17 +580,36 @@ static double estimate_delta_bound(std::string const & expr) {
     return found_any ? bound : -1.0;
 }
 
-/// Strategy 3d: CAS delegation interface.
-/// In a full implementation, this would serialize the symbolic expression
-/// to a CAS (Mathematica, SymPy, etc.) and ask whether it simplifies to zero.
+// ── CAS delegation via Lean FFI callback ─────────────────────────
+
+/// Global callback registered from Lean side.
+/// Signature: (symbolic_expr, law_name) -> 0=inconclusive, 1=true(zero), 2=false(nonzero)
+static std::function<uint8_t(std::string const &, std::string const &)>
+    g_cas_callback = nullptr;
+
+void register_cas_callback(
+    std::function<uint8_t(std::string const &, std::string const &)> cb)
+{
+    g_cas_callback = std::move(cb);
+}
+
+/// Strategy 3d: CAS delegation via external engine (Julia/Mathematica/Python).
+/// Calls back into Lean's CASBridge.delegateToCAS via registered callback.
 /// Returns true if CAS proves delta = 0, false if delta != 0,
 /// or nullopt if the CAS is unavailable or cannot determine.
 std::optional<bool> delegate_to_cas(
-    std::string const & /* symbolic_expr */,
-    conservation_law const & /* law */)
+    std::string const & symbolic_expr,
+    conservation_law const & law)
 {
-    // Not yet connected to an external CAS.
-    return std::nullopt;
+    if (!g_cas_callback) {
+        return std::nullopt;
+    }
+    uint8_t result = g_cas_callback(symbolic_expr, law.m_name);
+    switch (result) {
+    case 1: return true;   // CAS verified: delta = 0
+    case 2: return false;  // CAS refuted: delta ≠ 0
+    default: return std::nullopt;  // inconclusive
+    }
 }
 
 // ── Pass 3: Residual analysis for symbolic deltas ────────────────
@@ -601,16 +639,12 @@ conservation_verdict conservation_checker::residual_analysis(
         break;
     }
 
-    // Strategy 3a: Check if the symbolic expression contains
-    // known cancellation patterns (e.g., "kinetic + potential = 0")
+    // Strategy 3a: Removed. The previous implementation checked for "kinetic"
+    // and "potential" substrings in the symbolic delta, but this caused false
+    // positives: e.g. delta(energy) = kinetic + potential + radiation_loss
+    // would pass despite the radiation_loss term. Strategies 3b/3c/3d provide
+    // sound analysis without substring heuristics.
     auto const & expr = delta.m_symbolic_expr;
-    if (expr.find("kinetic") != std::string::npos &&
-        expr.find("potential") != std::string::npos) {
-        v.m_kind = conservation_verdict_kind::verified_approx;
-        v.m_hint = "Energy conservation: KE + PE terms detected, "
-                   "assuming standard Hamiltonian structure";
-        return v;
-    }
 
     // Strategy 3b: Dimensional analysis
     // If the delta expression mixes terms with incompatible dimensions,
@@ -626,16 +660,19 @@ conservation_verdict conservation_checker::residual_analysis(
         }
     }
 
-    // Strategy 3c: Bound estimation
-    // Extract numeric coefficients from the symbolic delta and estimate
-    // an upper bound on |delta|. If bounded below tolerance, accept.
+    // Strategy 3c: Bound estimation (heuristic, not a sound bound).
+    // Summing absolute values of numeric literals does not bound the actual
+    // delta magnitude because it ignores variable values and expression
+    // structure. We report the estimate as a diagnostic hint but do NOT
+    // use it to declare conservation verified.
     {
         double bound = estimate_delta_bound(expr);
         if (bound >= 0.0 && bound < law.m_tolerance) {
-            v.m_kind = conservation_verdict_kind::verified_approx;
-            v.m_hint = "Conservation verified within tolerance: |delta| <= "
-                       + std::to_string(bound) + " < "
-                       + std::to_string(law.m_tolerance);
+            v.m_kind = conservation_verdict_kind::inconclusive;
+            v.m_hint = "Heuristic coefficient bound |delta| <= "
+                       + std::to_string(bound) + " < tolerance "
+                       + std::to_string(law.m_tolerance)
+                       + "; runtime checks inserted (bound is not rigorous)";
             return v;
         }
     }
