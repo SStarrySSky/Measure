@@ -363,4 +363,4 @@ The goal is not to replace physicists. It's to give them a tool where the compil
 
 ## 📄 License
 
-[Apache 2.0](LICENSE)
+[MIT](LICENSE)
